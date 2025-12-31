@@ -98,11 +98,14 @@ const handleBinaryData = (arrayBuffer) => {
     const pcBytes = arrayBuffer.slice(1);
     const float32Array = new Float32Array(pcBytes);
     const points = [];
-    for (let i = 0; i < float32Array.length; i += 3) {
+    const colors = [];
+    // XYZRGB format: 6 floats per point (x, y, z, r, g, b)
+    for (let i = 0; i < float32Array.length; i += 6) {
       points.push([float32Array[i], float32Array[i + 1], float32Array[i + 2]]);
+      colors.push([float32Array[i + 3], float32Array[i + 4], float32Array[i + 5]]);
     }
-    pointCloudData.value = points;
-    window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: points }));
+    pointCloudData.value = { points, colors };
+    window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points, colors } }));
   }
 };
 

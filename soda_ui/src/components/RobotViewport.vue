@@ -22,6 +22,9 @@ let scene, camera, renderer, controls, loader;
 let raycaster, pointer;
 let robotModel = null;
 let pointCloudPoints = null;
+let pointCloudGeometry = null;
+let pointCloudMaterial = null;
+let currentBufferSize = 0; // Track current buffer capacity
 const currentHelpers = new THREE.Group();
 let selectedMeshes = [];
 let draggingJoint = null;
@@ -69,7 +72,7 @@ const initScene = () => {
 
   manager.setURLModifier((url) => {
     if (url.startsWith('./')) {
-      return `http://localhost:8080/assets/xpkg_urdf_archer_l6y/${url.substring(2)}`;
+      return `http://localhost:8080/assets/l6y_gp100/${url.substring(2)}`;
     }
     return url;
   });
@@ -146,12 +149,22 @@ const sendJointCommand = (jointName, angle) => {
   }).catch(error => console.error('Failed to send joint command:', error));
 };
 
+// Mimic joint definitions for GP100 gripper parallel linkage
+const MIMIC_JOINTS = {
+  'gripper_left_joint_1': [
+    'gripper_left_joint_2',
+    'gripper_left_helper_joint',
+    'gripper_right_joint_1',
+    'gripper_right_joint_2',
+    'gripper_right_helper_joint'
+  ]
+};
+
 const handleJointStateUpdate = (event) => {
   if (!robotModel) return;
 
   const jointStates = event.detail;
 
-  console.log("jointStates=", jointStates)
   jointStates.forEach(joint => {
     const jointName = joint.name;
     const angle = joint.angle;
@@ -160,38 +173,102 @@ const handleJointStateUpdate = (event) => {
     if (jointObj && jointObj.setJointValue) {
       jointObj.setJointValue(angle);
     }
+
+    // Handle mimic joints (parallel linkage)
+    if (MIMIC_JOINTS[jointName]) {
+      MIMIC_JOINTS[jointName].forEach(mimicName => {
+        const mimicJoint = findJointByName(robotModel, mimicName);
+        if (mimicJoint && mimicJoint.setJointValue) {
+          mimicJoint.setJointValue(angle);
+        }
+      });
+    }
   });
 };
 
-const updatePointCloud = (points) => {
+const updatePointCloud = (data) => {
+  // Support both old format (array) and new format ({ points, colors })
+  let points, colors;
+  if (Array.isArray(data)) {
+    points = data;
+    colors = null;
+  } else if (data && data.points) {
+    points = data.points;
+    colors = data.colors;
+  } else {
+    return;
+  }
+
   if (!points || points.length === 0) return;
 
-  if (pointCloudPoints) {
-    scene.remove(pointCloudPoints);
-    pointCloudPoints.geometry.dispose();
-    pointCloudPoints.material.dispose();
+  const numPoints = points.length;
+  const hasColors = colors && colors.length >= numPoints;
+
+  // Check if we need to resize buffer (only grow, with 20% margin)
+  const needsResize = numPoints > currentBufferSize;
+  const newBufferSize = needsResize ? Math.ceil(numPoints * 1.2) : currentBufferSize;
+
+  // Initialize or resize geometry
+  if (!pointCloudGeometry || needsResize) {
+    // Clean up old geometry if resizing
+    if (pointCloudGeometry) {
+      pointCloudGeometry.dispose();
+    }
+
+    pointCloudGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(newBufferSize * 3);
+    const colorArray = new Float32Array(newBufferSize * 3);
+
+    pointCloudGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    pointCloudGeometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+    pointCloudGeometry.setDrawRange(0, 0);
+
+    currentBufferSize = newBufferSize;
+
+    // Create material once
+    if (!pointCloudMaterial) {
+      pointCloudMaterial = new THREE.PointsMaterial({
+        size: 0.01,
+        sizeAttenuation: true,
+        vertexColors: true
+      });
+    }
+
+    // Update or create Points object
+    if (pointCloudPoints) {
+      pointCloudPoints.geometry = pointCloudGeometry;
+    } else {
+      pointCloudPoints = new THREE.Points(pointCloudGeometry, pointCloudMaterial);
+      pointCloudPoints.frustumCulled = false;
+      scene.add(pointCloudPoints);
+    }
   }
 
-  const geometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(points.length * 3);
+  // Update buffer data (no allocation)
+  const posAttr = pointCloudGeometry.getAttribute('position');
+  const colorAttr = pointCloudGeometry.getAttribute('color');
 
-  for (let i = 0; i < points.length; i++) {
-    positions[i * 3] = points[i][0];
-    positions[i * 3 + 1] = points[i][1];
-    positions[i * 3 + 2] = points[i][2];
+  for (let i = 0; i < numPoints; i++) {
+    posAttr.array[i * 3] = points[i][0];
+    posAttr.array[i * 3 + 1] = points[i][1];
+    posAttr.array[i * 3 + 2] = points[i][2];
+
+    if (hasColors) {
+      colorAttr.array[i * 3] = colors[i][0];
+      colorAttr.array[i * 3 + 1] = colors[i][1];
+      colorAttr.array[i * 3 + 2] = colors[i][2];
+    } else {
+      // Default green color
+      colorAttr.array[i * 3] = 0;
+      colorAttr.array[i * 3 + 1] = 1;
+      colorAttr.array[i * 3 + 2] = 0;
+    }
   }
 
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-  const material = new THREE.PointsMaterial({
-    color: 0x00ff00,
-    size: 0.01,
-    sizeAttenuation: true
-  });
-
-  pointCloudPoints = new THREE.Points(geometry, material);
+  posAttr.needsUpdate = true;
+  colorAttr.needsUpdate = true;
+  pointCloudGeometry.setDrawRange(0, numPoints);
   pointCloudPoints.visible = props.showPointCloud;
-  scene.add(pointCloudPoints);
 };
 
 watch(() => props.pointCloudData, (newData) => {
@@ -457,10 +534,13 @@ onUnmounted(() => {
   window.removeEventListener('mujoco-joint-states', handleJointStateUpdate);
   if (pointCloudPoints) {
     scene.remove(pointCloudPoints);
-    pointCloudPoints.geometry.dispose();
-    pointCloudPoints.material.dispose();
   }
-  // Cleanup listeners
+  if (pointCloudGeometry) {
+    pointCloudGeometry.dispose();
+  }
+  if (pointCloudMaterial) {
+    pointCloudMaterial.dispose();
+  }
 });
 </script>
 
