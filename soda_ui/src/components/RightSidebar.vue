@@ -62,7 +62,12 @@ const emit = defineEmits(['gripper-change']);
 
 const gripperValue = computed({
   get: () => Math.round(props.gripperDistance),
-  set: (value) => emit('gripper-change', value)
+  set: (value) => {
+    emit('gripper-change', value);
+    if (window.sendGripperSet) {
+      window.sendGripperSet(value);
+    }
+  }
 });
 
 const activeTab = ref('Angle');

@@ -21,6 +21,7 @@ PORT = 8080
 VIDEO_PATH = "test_30fps.mp4"
 TARGET_FPS = 30
 URDF_PATH = "public/l6y_gp100/l6y_gp100.urdf"
+MJCF_PATH = "public/l6y_gp100/l6y_gp100.xml"
 STATIC_PATH = "public"
 POINTCLOUD_PATH = "Wheat_Alsen_F6_2023-06-30-1836_fused_output_cluster_2.npy"
 RECORDING_DIR = "recordings"
@@ -41,7 +42,7 @@ def init_mujoco():
         try:
             enable_gui = os.environ.get("MUJOCO_GUI", "true").lower() == "true"
             robot = SimRobot(
-                URDF_PATH,
+                MJCF_PATH,
                 enable_gui=enable_gui,
                 video_path=VIDEO_PATH,
                 pointcloud_path=POINTCLOUD_PATH,
@@ -141,6 +142,21 @@ async def handle_joint_command(ws, data):
         robot.set_command(q)
 
 
+async def handle_gripper_set(ws, data):
+    """处理夹爪距离设置命令"""
+    global robot
+
+    distance = data.get("distance", 0.05)
+    if distance < 0.01:
+        distance = 0.01
+    elif distance > 0.1:
+        distance = 0.1
+
+    print("data", data)
+    print("now=", robot.get_gripper_distance())
+    robot.set_gripper_distance(distance)
+
+
 async def message_handler(ws):
     """处理前端消息的协程"""
     try:
@@ -149,8 +165,12 @@ async def message_handler(ws):
             if msg.type == WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
-                    if data.get("type") == "joint_command":
+                    msg_type = data.get("type")
+
+                    if msg_type == "joint_command":
                         await handle_joint_command(ws, data)
+                    elif msg_type == "gripper_set":
+                        await handle_gripper_set(ws, data)
                 except json.JSONDecodeError:
                     pass
     except Exception as e:
@@ -298,6 +318,21 @@ async def gripper_distance_handler(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def get_gripper_joints_handler(request):
+    """获取 gripper 相关的关节列表"""
+    global robot
+    if robot is None:
+        return web.json_response({"error": "Robot not initialized"}, status=503)
+    try:
+        gripper_joints = []
+        for joint_name in robot.joint_names:
+            if joint_name.startswith("gripper"):
+                gripper_joints.append(joint_name)
+        return web.json_response({"joints": gripper_joints})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
 @web.middleware
 async def cors_middleware(request, handler):
     if request.method == "OPTIONS":
@@ -328,6 +363,7 @@ app.add_routes(
         web.get("/urdf", get_urdf_handler),
         web.post("/api/gripper/set", gripper_handler),
         web.get("/api/gripper/distance", gripper_distance_handler),
+        web.get("/api/joints/gripper", get_gripper_joints_handler),
         web.post("/api/record", record_handler),
         web.static("/assets", os.path.abspath(STATIC_PATH)),
     ]

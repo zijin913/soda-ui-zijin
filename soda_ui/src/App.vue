@@ -46,10 +46,22 @@ const initWebSocket = () => {
   const wsUrl = 'ws://localhost:8080/ws';
   socket = new WebSocket(wsUrl);
   socket.binaryType = 'arraybuffer';
-  
+
   window.socket = socket;
 
   socket.onopen = () => console.log('WS Connected');
+
+  const sendGripperSet = (distanceMm) => {
+    const distanceMeters = distanceMm / 1000;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'gripper_set',
+        distance: distanceMeters
+      }));
+    }
+  };
+
+  window.sendGripperSet = sendGripperSet;
 
   socket.onmessage = (event) => {
     const data = event.data;

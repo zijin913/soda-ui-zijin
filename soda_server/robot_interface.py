@@ -92,16 +92,40 @@ class SimRobot(RobotInterface):
     ):
         # 初始化你提供的管理器
         self.sim_manager = MujocoManager(urdf_path, enable_gui)
-        # 如果没有指定 num_joints，则使用 URDF 中的所有关节数量
+        
         if num_joints is None:
             num_joints = self.sim_manager.model.njnt
         super().__init__(num_joints)
-        # 缓存关节名称列表，用于按顺序映射
-        # 注意：这里假设 URDF 中的前 num_joints 个关节就是我们要控制的关节
+        
+        # 缓存关节名称和ID，用于快速访问
         self.joint_names = [
             mujoco.mj_id2name(self.sim_manager.model, mujoco.mjtObj.mjOBJ_JOINT, i)
             for i in range(self.sim_manager.model.njnt)
         ][:num_joints]
+        
+        # 2. 夹爪相关 ID 初始化 (根据 XML 定义)
+        self.gripper_driver_name = "gripper_left_joint_1"
+        self.gripper_driver_idx = -1
+        
+        # 查找驱动关节在控制向量 q 中的索引
+        if self.gripper_driver_name in self.joint_names:
+            self.gripper_driver_idx = self.joint_names.index(self.gripper_driver_name)
+        
+        # 获取指尖 Link 的 Body ID，用于计算距离
+        self.left_finger_body_id = mujoco.mj_name2id(
+            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_left_link_2"
+        )
+        self.right_finger_body_id = mujoco.mj_name2id(
+            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_right_link_2"
+        )
+
+        # 3. 初始化夹爪 距离-角度 映射表 (LUT)
+        if self.gripper_driver_idx != -1 and self.left_finger_body_id >= 0:
+            self._init_gripper_lut()
+        else:
+            print("Warning: Gripper joints/links not found. Gripper control disabled.")
+            self.dist_table = None
+            self.angle_table = None
 
         # 初始化RGB和点云数据源
         import cv2
@@ -120,6 +144,66 @@ class SimRobot(RobotInterface):
                 self.pointcloud_data = np.load(pointcloud_path)
             else:
                 self.pointcloud_data = np.zeros((0, 3), dtype=np.float32)
+
+    def _init_gripper_lut(self):
+        """
+        在初始化阶段构建 距离<->角度 的查找表。
+        这样 set_gripper_distance 就是 O(1) 操作，且不需要 step 仿真。
+        """
+        model = self.sim_manager.model
+        data = self.sim_manager.data
+        
+        # 找出所有的 mimic 关节 ID（包括驱动关节本身）
+        # XML 中定义的 mimic 关系是 1.0 倍率
+        mimic_joint_names = [
+            "gripper_left_joint_1",   # Driver
+            "gripper_left_joint_2",   # Mimic
+            "gripper_left_helper_joint",
+            "gripper_right_joint_1",  # Mimic
+            "gripper_right_joint_2",  # Mimic
+            "gripper_right_helper_joint"
+        ]
+        
+        # 获取这些关节在 MuJoCo qpos 数组中的地址 (qpos_adr)
+        mimic_adrs = []
+        for name in mimic_joint_names:
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            if jid >= 0:
+                mimic_adrs.append(model.jnt_qposadr[jid])
+
+        # 驱动关节范围 (从 XML limit 读取: 0 ~ 1.52)
+        # 为了更精确，可以读取 model.jnt_range
+        driver_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, self.gripper_driver_name)
+        min_angle, max_angle = model.jnt_range[driver_jid]
+        
+        # 备份当前状态
+        backup_qpos = data.qpos.copy()
+        
+        num_points = 50
+        self.angle_table = np.linspace(min_angle, max_angle, num_points)
+        self.dist_table = np.zeros(num_points)
+        
+        # 遍历角度，仅进行运动学解算 (Kinematics)，不进行动力学步进 (Step)
+        for i, angle in enumerate(self.angle_table):
+            # 手动设置所有相关关节的角度（模拟 mimic 行为）
+            # 因为 mj_kinematics 是纯几何计算，不会自动处理 constraint，需要手动赋值
+            for adr in mimic_adrs:
+                data.qpos[adr] = angle  # 假设 multiplier=1.0, offset=0
+            
+            # 更新几何位置
+            mujoco.mj_kinematics(model, data)
+            
+            # 计算距离
+            pos_l = data.xpos[self.left_finger_body_id]
+            pos_r = data.xpos[self.right_finger_body_id]
+            self.dist_table[i] = np.linalg.norm(pos_l - pos_r)
+            
+        # 恢复状态
+        data.qpos[:] = backup_qpos
+        mujoco.mj_kinematics(model, data)
+        
+        # 确保 distance 是单调的（通常是的），以便 np.interp 使用
+        # 打印调试信息：print(f"Gripper range: {self.dist_table[0]:.4f}m (Open) -> {self.dist_table[-1]:.4f}m (Closed)")
 
     def get_state(self):
         # 调用 MujocoManager 的方法获取状态列表
@@ -197,89 +281,51 @@ class SimRobot(RobotInterface):
 
     def get_gripper_distance(self):
         """
-        获取夹爪左右指尖质心之间的距离。
-
-        Returns:
-            float: 当前距离（米）
+        获取当前夹爪距离。
         """
-        # 获取左右link的body ID
-        left_link_id = mujoco.mj_name2id(
-            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_left_link_2"
-        )
-        right_link_id = mujoco.mj_name2id(
-            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_right_link_2"
-        )
-
-        if left_link_id < 0 or right_link_id < 0:
-            raise ValueError("Gripper link bodies not found in URDF")
-
-        # 更新运动学以获取最新位置
-        mujoco.mj_kinematics(self.sim_manager.model, self.sim_manager.data)
-
-        # 获取两个link的位置
-        left_pos = self.sim_manager.data.xpos[left_link_id]
-        right_pos = self.sim_manager.data.xpos[right_link_id]
-
-        # 计算距离
-        distance = np.linalg.norm(left_pos - right_pos)
-        return distance
+        # 确保数据是最新的
+        # 注意：通常 step() 后会自动更新，但如果只控制没 step，可能需要 mj_kinematics
+        # 这里假设外部循环会调用 step()
+        
+        left_pos = self.sim_manager.data.xpos[self.left_finger_body_id]
+        right_pos = self.sim_manager.data.xpos[self.right_finger_body_id]
+        
+        return np.linalg.norm(left_pos - right_pos)
 
     def set_gripper_distance(self, distance):
         """
-        设置夹爪左右指尖质心之间的距离。
-
-        Args:
-            distance (float): 目标距离（米）
+        设置夹爪目标距离。
+        注意：这会修改当前的控制指令。
         """
-        # 获取左右link的body ID
-        left_link_id = mujoco.mj_name2id(
-            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_left_link_2"
-        )
-        right_link_id = mujoco.mj_name2id(
-            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_right_link_2"
-        )
+        if self.dist_table is None or self.gripper_driver_idx == -1:
+            return
 
-        if left_link_id < 0 or right_link_id < 0:
-            raise ValueError("Gripper link bodies not found in URDF")
+        # 1. 限制距离范围
+        # 由于插值不会外推，我们需要确保输入在表格范围内
+        # 注意 dist_table 可能是递减的（角度越大，距离越小）
+        min_d = min(self.dist_table)
+        max_d = max(self.dist_table)
+        distance = np.clip(distance, min_d, max_d)
 
-        # 获取gripper_left_joint_1的关节ID
-        joint_name = "gripper_left_joint_1"
-        joint_idx = (
-            self.joint_names.index(joint_name) if joint_name in self.joint_names else -1
-        )
-        if joint_idx < 0:
-            raise ValueError("Gripper joint not found")
+        # 2. 查表计算目标角度 (Linear Interpolation)
+        # np.interp 要求 x 坐标 (self.dist_table) 是递增的
+        if self.dist_table[0] < self.dist_table[-1]:
+            target_angle = np.interp(distance, self.dist_table, self.angle_table)
+        else:
+            # 如果距离随角度减小 (常见的夹爪)，需要翻转数组进行插值
+            target_angle = np.interp(distance, self.dist_table[::-1], self.angle_table[::-1])
 
-        # 二分查找找到满足距离要求的关节角度
-        low, high = 0.0, 1.52
-        tolerance = 0.001
-
-        # 保存当前状态
-        current_q = self.get_state()["q"].copy()
-
-        for _ in range(20):
-            mid = (low + high) / 2
-            current_q[joint_idx] = mid
-            self.set_command(current_q)
-            self.sim_manager.step()
-            mujoco.mj_kinematics(self.sim_manager.model, self.sim_manager.data)
-
-            # 获取两个link的位置
-            left_pos = self.sim_manager.data.xpos[left_link_id]
-            right_pos = self.sim_manager.data.xpos[right_link_id]
-            current_distance = np.linalg.norm(left_pos - right_pos)
-
-            if abs(current_distance - distance) < tolerance:
-                break
-            elif current_distance < distance:
-                high = mid
-            else:
-                low = mid
-
-        # 恢复其他关节角度
-        final_q = self.get_state()["q"].copy()
-        final_q[joint_idx] = (low + high) / 2
-        self.set_command(final_q)
+        # 3. 设置指令
+        # 获取当前的完整关节指令（保持手臂不动，只动夹爪）
+        # 这里假设我们应该维持当前的实际位置作为手臂的目标，或者你需要维护一个类内的 self.current_target
+        current_state = self.get_state()
+        target_q = current_state["q"].copy()
+        
+        # 更新夹爪驱动关节的目标角度
+        target_q[self.gripper_driver_idx] = target_angle
+        
+        # 发送指令
+        self.set_command(target_q)
 
 
 class RealRobot(RobotInterface):

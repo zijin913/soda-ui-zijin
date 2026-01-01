@@ -36,6 +36,9 @@ let isDragging = false;
 const dragStartPoint = { x: 0, y: 0 };
 let initialJointAngle = 0;
 
+// Gripper joints that should not be controlled via dragging
+let gripperJointNames = [];
+
 // Three.js Logic (保持原有的大部分代码，略微精简)
 const initScene = () => {
   scene = new THREE.Scene();
@@ -114,7 +117,22 @@ const initScene = () => {
     }
   };
 
+  const fetchGripperJoints = async () => {
+    try {
+      const response = await fetch('http://localhost:8080/api/joints/gripper');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      gripperJointNames = data.joints || [];
+    } catch (error) {
+      console.error('Failed to fetch gripper joints:', error);
+      gripperJointNames = [];
+    }
+  };
+
   loadURDF();
+  fetchGripperJoints();
 
   const animate = () => {
     requestAnimationFrame(animate);
@@ -313,18 +331,22 @@ const onPointerDown = (event) => {
       addJointDirectionHelper(targetLink, targetJoint);
 
       if (targetJoint.jointType === 'revolute' || targetJoint.jointType === 'continuous') {
-        draggingJoint = targetJoint;
-        isDragging = true;
-        initialJointAngle = draggingJoint.angle || 0;
-        accumulatedDeltaAngle = 0;
-        controls.enabled = false;
+        const isGripperJoint = gripperJointNames.includes(targetJoint.urdfName);
 
-        jointControlTimer = setInterval(() => {
-          if (accumulatedDeltaAngle !== 0) {
-            sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle);
-            accumulatedDeltaAngle = 0;
-          }
-        }, 1000 / JOINT_CONTROL_HZ);
+        if (!isGripperJoint) {
+          draggingJoint = targetJoint;
+          isDragging = true;
+          initialJointAngle = draggingJoint.angle || 0;
+          accumulatedDeltaAngle = 0;
+          controls.enabled = false;
+
+          jointControlTimer = setInterval(() => {
+            if (accumulatedDeltaAngle !== 0) {
+              sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle);
+              accumulatedDeltaAngle = 0;
+            }
+          }, 1000 / JOINT_CONTROL_HZ);
+        }
       }
     }
   } else {
