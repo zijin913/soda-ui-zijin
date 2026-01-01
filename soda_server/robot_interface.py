@@ -86,13 +86,16 @@ class SimRobot(RobotInterface):
         self,
         urdf_path,
         enable_gui=True,
-        num_joints=7,
+        num_joints=None,
         video_path=None,
         pointcloud_path=None,
     ):
-        super().__init__(num_joints)
         # 初始化你提供的管理器
         self.sim_manager = MujocoManager(urdf_path, enable_gui)
+        # 如果没有指定 num_joints，则使用 URDF 中的所有关节数量
+        if num_joints is None:
+            num_joints = self.sim_manager.model.njnt
+        super().__init__(num_joints)
         # 缓存关节名称列表，用于按顺序映射
         # 注意：这里假设 URDF 中的前 num_joints 个关节就是我们要控制的关节
         self.joint_names = [
@@ -146,7 +149,9 @@ class SimRobot(RobotInterface):
         目前这里只映射位置 q。
         """
         if len(q) != self.num_joints:
-            raise ValueError(f"Command dimension mismatch: expected {self.num_joints}, got {len(q)}")
+            raise ValueError(
+                f"Command dimension mismatch: expected {self.num_joints}, got {len(q)}"
+            )
 
         # 将 numpy 数组映射回 MujocoManager 需要的 {id: angle} 格式
         # 或者直接调用 set_joint_target_by_name
@@ -189,6 +194,92 @@ class SimRobot(RobotInterface):
         返回缓存的点云数据。
         """
         return self.pointcloud_data
+
+    def get_gripper_distance(self):
+        """
+        获取夹爪左右指尖质心之间的距离。
+
+        Returns:
+            float: 当前距离（米）
+        """
+        # 获取左右link的body ID
+        left_link_id = mujoco.mj_name2id(
+            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_left_link_2"
+        )
+        right_link_id = mujoco.mj_name2id(
+            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_right_link_2"
+        )
+
+        if left_link_id < 0 or right_link_id < 0:
+            raise ValueError("Gripper link bodies not found in URDF")
+
+        # 更新运动学以获取最新位置
+        mujoco.mj_kinematics(self.sim_manager.model, self.sim_manager.data)
+
+        # 获取两个link的位置
+        left_pos = self.sim_manager.data.xpos[left_link_id]
+        right_pos = self.sim_manager.data.xpos[right_link_id]
+
+        # 计算距离
+        distance = np.linalg.norm(left_pos - right_pos)
+        return distance
+
+    def set_gripper_distance(self, distance):
+        """
+        设置夹爪左右指尖质心之间的距离。
+
+        Args:
+            distance (float): 目标距离（米）
+        """
+        # 获取左右link的body ID
+        left_link_id = mujoco.mj_name2id(
+            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_left_link_2"
+        )
+        right_link_id = mujoco.mj_name2id(
+            self.sim_manager.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_right_link_2"
+        )
+
+        if left_link_id < 0 or right_link_id < 0:
+            raise ValueError("Gripper link bodies not found in URDF")
+
+        # 获取gripper_left_joint_1的关节ID
+        joint_name = "gripper_left_joint_1"
+        joint_idx = (
+            self.joint_names.index(joint_name) if joint_name in self.joint_names else -1
+        )
+        if joint_idx < 0:
+            raise ValueError("Gripper joint not found")
+
+        # 二分查找找到满足距离要求的关节角度
+        low, high = 0.0, 1.52
+        tolerance = 0.001
+
+        # 保存当前状态
+        current_q = self.get_state()["q"].copy()
+
+        for _ in range(20):
+            mid = (low + high) / 2
+            current_q[joint_idx] = mid
+            self.set_command(current_q)
+            self.sim_manager.step()
+            mujoco.mj_kinematics(self.sim_manager.model, self.sim_manager.data)
+
+            # 获取两个link的位置
+            left_pos = self.sim_manager.data.xpos[left_link_id]
+            right_pos = self.sim_manager.data.xpos[right_link_id]
+            current_distance = np.linalg.norm(left_pos - right_pos)
+
+            if abs(current_distance - distance) < tolerance:
+                break
+            elif current_distance < distance:
+                high = mid
+            else:
+                low = mid
+
+        # 恢复其他关节角度
+        final_q = self.get_state()["q"].copy()
+        final_q[joint_idx] = (low + high) / 2
+        self.set_command(final_q)
 
 
 class RealRobot(RobotInterface):

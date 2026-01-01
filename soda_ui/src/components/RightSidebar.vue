@@ -6,20 +6,19 @@
         <GripperIcon />
         <span>Gripper</span>
       </div>
-      <div class="gripper-controls">
-        <input
-          type="range"
-          class="gripper-slider"
-          v-model="gripperValue"
-          min="0"
-          max="100"
-          @input="emit('gripper-change', gripperValue)"
-        />
-        <div class="gripper-value">
-          <span class="val">{{ gripperValue }}</span>
-          <span class="unit">mm</span>
-        </div>
-      </div>
+       <div class="gripper-controls">
+         <input
+           type="range"
+           class="gripper-slider"
+           v-model="gripperValue"
+           min="10"
+           max="100"
+         />
+         <div class="gripper-value">
+           <span class="val">{{ gripperValue }}</span>
+           <span class="unit">mm</span>
+         </div>
+       </div>
     </div>
 
     <!-- Velocity / Charts 模块 -->
@@ -55,12 +54,16 @@ import GripperIcon from '@/components/icons/GripperIcon.vue';
 
 const props = defineProps({
   historyData: { type: Object, required: true },
-  jointNames: { type: Object, default: () => ({}) }
+  jointNames: { type: Object, default: () => ({}) },
+  gripperDistance: { type: Number, default: 0 }
 });
 
 const emit = defineEmits(['gripper-change']);
 
-const gripperValue = ref(20);
+const gripperValue = computed({
+  get: () => Math.round(props.gripperDistance),
+  set: (value) => emit('gripper-change', value)
+});
 
 const activeTab = ref('Angle');
 

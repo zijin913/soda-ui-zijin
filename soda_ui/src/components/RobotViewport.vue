@@ -13,9 +13,13 @@ import URDFLoader from 'urdf-loader';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 const props = defineProps({
-  pointCloudData: { type: Array, default: null },
+  pointCloudData: { default: null },
   showPointCloud: { type: Boolean, default: true }
 });
+
+const JOINT_CONTROL_HZ = 30;
+let jointControlTimer = null;
+let accumulatedDeltaAngle = 0;
 
 const canvasContainer = ref(null);
 let scene, camera, renderer, controls, loader;
@@ -121,7 +125,7 @@ const initScene = () => {
 
   window.addEventListener('resize', onWindowResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('pointerup', onPointerUp);
 };
 
@@ -136,17 +140,14 @@ const findJointByName = (model, name) => {
   return result;
 };
 
-const sendJointCommand = (jointName, angle) => {
-  fetch('http://localhost:8080/api/joint/set', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
+const sendJointCommand = (jointName, deltaAngle) => {
+  if (window.socket && window.socket.readyState === WebSocket.OPEN) {
+    window.socket.send(JSON.stringify({
+      type: 'joint_command',
       joint_name: jointName,
-      angle: angle
-    })
-  }).catch(error => console.error('Failed to send joint command:', error));
+      delta_angle: deltaAngle
+    }));
+  }
 };
 
 // Mimic joint definitions for GP100 gripper parallel linkage
@@ -283,20 +284,18 @@ watch(() => props.showPointCloud, (newValue) => {
   }
 });
 const onPointerDown = (event) => {
-  if (!robotModel) return;
+  if (!robotModel || event.button !== 0) return;
 
   const rect = canvasContainer.value.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
   raycaster.setFromCamera(pointer, camera);
-  // 此时辅助线已经 disableRaycast 了，不会挡路
   const intersects = raycaster.intersectObject(robotModel, true);
 
   if (intersects.length > 0) {
     const hitObject = intersects[0].object;
 
-    // 寻找 Link
     let targetLink = hitObject;
     while (targetLink && targetLink !== robotModel) {
       if (targetLink.type === 'URDFLink') break;
@@ -304,64 +303,67 @@ const onPointerDown = (event) => {
     }
     if (!targetLink || targetLink === robotModel) targetLink = hitObject.parent;
 
-    // 选中逻辑
     highlightLink(targetLink);
     clearHelpers();
     addAxesHelper(targetLink);
 
-    // 获取对应的 Joint (通常 Link 的 parent 就是 Joint)
     const targetJoint = targetLink.parent;
 
     if (targetJoint && targetJoint.isURDFJoint) {
       addJointDirectionHelper(targetLink, targetJoint);
 
-      // === 准备拖拽 ===
-      // 只有旋转关节才允许拖拽 (fixed 无法动)
       if (targetJoint.jointType === 'revolute' || targetJoint.jointType === 'continuous') {
         draggingJoint = targetJoint;
         isDragging = true;
-        dragStartPoint.x = event.clientX;
-        dragStartPoint.y = event.clientY;
-
-        // 读取当前角度 (urdf-loader 通常会在 joint 上挂载 angle 属性或 setJointValue 方法)
-        // 我们这里使用 joint.angle (getter)
         initialJointAngle = draggingJoint.angle || 0;
-
-        // 关键：禁用 OrbitControls，防止拖拽时旋转视角
+        accumulatedDeltaAngle = 0;
         controls.enabled = false;
+
+        jointControlTimer = setInterval(() => {
+          if (accumulatedDeltaAngle !== 0) {
+            sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle);
+            accumulatedDeltaAngle = 0;
+          }
+        }, 1000 / JOINT_CONTROL_HZ);
       }
     }
   } else {
-    // 点击空白
     resetHighlight();
     clearHelpers();
     draggingJoint = null;
   }
 };
 
-// --- 2. 移动：计算角度并更新 ---
-const onPointerMove = (event) => {
+const onWheel = (event) => {
   if (!isDragging || !draggingJoint) return;
 
-  const deltaX = event.clientX - dragStartPoint.x;
-  const sensitivity = 0.01;
-  const angleDelta = deltaX * sensitivity;
-  let newAngle = initialJointAngle + angleDelta;
+  event.preventDefault();
+
+  const degreesPerScroll = 1;
+  const angleDelta = (event.deltaY / 100) * degreesPerScroll * (Math.PI / 180);
+  let newAngle = initialJointAngle - angleDelta;
 
   if (draggingJoint.limits) {
     if (newAngle < draggingJoint.limits.lower) newAngle = draggingJoint.limits.lower;
     if (newAngle > draggingJoint.limits.upper) newAngle = draggingJoint.limits.upper;
   }
 
-  sendJointCommand(draggingJoint.urdfName, newAngle);
+  initialJointAngle = newAngle;
+  accumulatedDeltaAngle -= angleDelta;
 };
 
-// --- 3. 抬起：结束拖拽 ---
 const onPointerUp = () => {
   if (isDragging) {
+    if (jointControlTimer) {
+      clearInterval(jointControlTimer);
+      jointControlTimer = null;
+    }
+    if (accumulatedDeltaAngle !== 0) {
+      sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle);
+      accumulatedDeltaAngle = 0;
+    }
     isDragging = false;
     draggingJoint = null;
-    // 恢复视角控制
     controls.enabled = true;
   }
 };
@@ -540,6 +542,13 @@ onUnmounted(() => {
   }
   if (pointCloudMaterial) {
     pointCloudMaterial.dispose();
+  }
+  if (renderer && renderer.domElement) {
+    renderer.domElement.removeEventListener('wheel', onWheel);
+  }
+  if (jointControlTimer) {
+    clearInterval(jointControlTimer);
+    jointControlTimer = null;
   }
 });
 </script>

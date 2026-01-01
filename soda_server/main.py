@@ -7,6 +7,7 @@ import struct
 import os
 import numpy as np
 from datetime import datetime
+import msgpack
 
 from mujoco_manager import MujocoManager
 from robot_interface import SimRobot
@@ -42,7 +43,6 @@ def init_mujoco():
             robot = SimRobot(
                 URDF_PATH,
                 enable_gui=enable_gui,
-                num_joints=6,
                 video_path=VIDEO_PATH,
                 pointcloud_path=POINTCLOUD_PATH,
             )
@@ -101,7 +101,9 @@ async def record_handler(request):
             recording_enabled = True
             print(f"Recording started. Stream linked to: {current_file_path}")
 
-            return web.json_response({"status": "recording_started", "file": current_file_path})
+            return web.json_response(
+                {"status": "recording_started", "file": current_file_path}
+            )
 
         elif action == "stop":
             if not recording_enabled:
@@ -112,13 +114,121 @@ async def record_handler(request):
             # 也可以选择在这里 urdf_logger = None 来释放资源，但为了保持最后状态可视，可以保留
             print(f"Recording stopped. Data saved to: {current_file_path}")
 
-            return web.json_response({"status": "recording_stopped", "saved_to": current_file_path})
+            return web.json_response(
+                {"status": "recording_stopped", "saved_to": current_file_path}
+            )
 
         else:
             return web.json_response({"error": "Invalid action"}, status=400)
     except Exception as e:
         print(f"Record error: {e}")
         return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_joint_command(ws, data):
+    """处理关节控制命令"""
+    global robot
+
+    joint_name = data.get("joint_name")
+    delta_angle = data.get("delta_angle", 0)
+    joint_idx = (
+        robot.joint_names.index(joint_name) if joint_name in robot.joint_names else -1
+    )
+    if joint_idx >= 0:
+        current_state = robot.get_state()
+        q = current_state["q"].copy()
+        q[joint_idx] += delta_angle
+        robot.set_command(q)
+
+
+async def message_handler(ws):
+    """处理前端消息的协程"""
+    try:
+        while not ws.closed:
+            msg = await ws.receive()
+            if msg.type == WSMsgType.TEXT:
+                try:
+                    data = json.loads(msg.data)
+                    if data.get("type") == "joint_command":
+                        await handle_joint_command(ws, data)
+                except json.JSONDecodeError:
+                    pass
+    except Exception as e:
+        print(f"Message handler error: {e}")
+
+
+async def broadcast_handler(ws):
+    """定时发送数据的协程"""
+    global robot, urdf_logger
+
+    try:
+        while not ws.closed:
+            start_time = time.time()
+            current_ts = time.time()
+
+            # 1. 读取视频帧
+            frame = robot.get_rgb()
+
+            # 2. 物理引擎步进 & 获取状态
+            robot.step()
+            state = robot.get_state()
+            joint_states = state_to_joint_states(state, robot.joint_names)
+
+            # 3. 记录数据
+            if recording_enabled and urdf_logger is not None:
+                urdf_logger.set_time(current_ts)
+
+                if frame is not None:
+                    urdf_logger.log_image("camera/rgb", frame)
+
+                pointcloud_data = robot.get_point_cloud()
+                if pointcloud_data is not None and len(pointcloud_data) > 0:
+                    urdf_logger.log_points(
+                        "pointcloud", pointcloud_data, colors=[0, 255, 0]
+                    )
+
+                joint_map = {j["name"]: j["angle"] for j in joint_states}
+                urdf_logger.update_joints(joint_map)
+
+                for joint in joint_states:
+                    base_path = f"joints/{joint['name']}"
+                    urdf_logger.log_scalar(f"{base_path}/angle", joint["angle"])
+                    urdf_logger.log_scalar(f"{base_path}/velocity", joint["velocity"])
+                    urdf_logger.log_scalar(f"{base_path}/torque", joint["torque"])
+
+            # 4. 使用 MessagePack 统一发送数据
+            video_bytes = None
+            if frame is not None:
+                _, buffer = cv2.imencode(
+                    ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                )
+                video_bytes = buffer.tobytes()
+
+            pointcloud_data = robot.get_point_cloud()
+            pc_data = None
+            if pointcloud_data is not None:
+                pc_data = pointcloud_data.tolist()
+
+            gripper_distance = robot.get_gripper_distance()
+
+            packed_data = {
+                "timestamp": current_ts,
+                "video": video_bytes,
+                "pointcloud": pc_data,
+                "joints": joint_states,
+                "gripper_distance": gripper_distance,
+            }
+
+            packed_bytes = msgpack.packb(packed_data, use_bin_type=True)
+            header = struct.pack("I", len(packed_bytes))
+            await ws.send_bytes(header + packed_bytes)
+
+            # 帧率控制
+            process_time = time.time() - start_time
+            sleep_time = max(0, (1.0 / TARGET_FPS) - process_time)
+            await asyncio.sleep(sleep_time)
+    except Exception as e:
+        print(f"Broadcast handler error: {e}")
 
 
 async def websocket_handler(request):
@@ -133,109 +243,10 @@ async def websocket_handler(request):
         init_mujoco()
 
     try:
-        while not ws.closed:
-            start_time = time.time()
-            current_ts = time.time()  # 统一时间戳
-
-            # 1. 处理 WebSocket 消息 (控制指令)
-            try:
-                msg = await asyncio.wait_for(ws.receive(), timeout=0.001)
-                if msg is not None and msg.type == WSMsgType.TEXT:
-                    try:
-                        data = json.loads(msg.data)
-                        if data.get("type") == "joint_command":
-                            joint_name = data.get("joint_name")
-                            angle = data.get("angle")
-                            # 通过RobotInterface的统一接口设置单个关节目标
-                            joint_idx = robot.joint_names.index(joint_name) if joint_name in robot.joint_names else -1
-                            if joint_idx >= 0:
-                                q = np.zeros(robot.num_joints)
-                                current_state = robot.get_state()
-                                q[:] = current_state["q"]
-                                q[joint_idx] = angle
-                                robot.set_command(q)
-                    except json.JSONDecodeError:
-                        pass
-            except asyncio.TimeoutError:
-                pass
-
-            # 2. 读取视频帧
-            frame = robot.get_rgb()
-
-            # =========================================================
-            # 核心修改：使用 urdf_logger 进行所有记录
-            # =========================================================
-            if recording_enabled and urdf_logger is not None:
-                # 设置全局时间
-                urdf_logger.set_time(current_ts)
-
-                # A. 记录 RGB 图像
-                if frame is not None:
-                    urdf_logger.log_image("camera/rgb", frame)
-
-                # B. 记录点云
-                pointcloud_data = robot.get_point_cloud()
-                if pointcloud_data is not None and len(pointcloud_data) > 0:
-                    urdf_logger.log_points("pointcloud", pointcloud_data, colors=[0, 255, 0])
-
-            # =========================================================
-            # 核心修改：使用 urdf_logger 进行所有记录
-            # =========================================================
-            if recording_enabled and urdf_logger is not None:
-                # 设置全局时间
-                urdf_logger.set_time(current_ts)
-
-                # A. 记录 RGB 图像
-                if frame is not None:
-                    urdf_logger.log_image("camera/rgb", frame)
-
-                # B. 记录点云
-                if pointcloud_data is not None and len(pointcloud_data) > 0:
-                    urdf_logger.log_points("pointcloud", pointcloud_data, colors=[0, 255, 0])
-
-            # 3. 发送图片给前端 WebSocket
-            if frame is not None:
-                _, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                header = struct.pack("B", 0x01)
-                await ws.send_bytes(header + buffer.tobytes())
-
-            # 4. 发送点云给前端 WebSocket
-            pointcloud_data = robot.get_point_cloud()
-            if pointcloud_data is not None:
-                pc_bytes = pointcloud_data.astype(np.float32).tobytes()
-                header = struct.pack("B", 0x02)
-                await ws.send_bytes(header + pc_bytes)
-
-            # 5. 物理引擎步进 & 获取状态
-            robot.step()
-            state = robot.get_state()
-            joint_states = state_to_joint_states(state, robot.joint_names)
-
-            # =========================================================
-            # 记录关节数据
-            # =========================================================
-            if recording_enabled and urdf_logger is not None:
-                # C. 更新 URDF 模型姿态
-                # 转换格式 list[dict] -> dict[name: angle]
-                joint_map = {j["name"]: j["angle"] for j in joint_states}
-                urdf_logger.update_joints(joint_map)
-
-                # D. 记录关节标量数据 (曲线)
-                for joint in joint_states:
-                    base_path = f"joints/{joint['name']}"
-                    urdf_logger.log_scalar(f"{base_path}/angle", joint["angle"])
-                    urdf_logger.log_scalar(f"{base_path}/velocity", joint["velocity"])
-                    urdf_logger.log_scalar(f"{base_path}/torque", joint["torque"])
-
-            # 6. 发送状态给前端
-            joint_data = {"timestamp": current_ts, "joints": joint_states}
-            await ws.send_str(json.dumps(joint_data))
-
-            # 7. 帧率控制
-            process_time = time.time() - start_time
-            sleep_time = max(0, (1.0 / TARGET_FPS) - process_time)
-            await asyncio.sleep(sleep_time)
-
+        await asyncio.gather(
+            message_handler(ws),
+            broadcast_handler(ws),
+        )
     except Exception as e:
         print(f"Connection error: {e}")
     finally:
@@ -250,24 +261,41 @@ async def joint_command_handler(request):
     global robot
     if robot is None:
         return web.json_response({"error": "Robot not initialized"}, status=503)
+    return web.json_response({"error": "Use WebSocket for joint control"}, status=400)
+
+
+async def get_urdf_handler(request):
+    return web.json_response(
+        {"url": f"http://localhost:{PORT}/assets/l6y_gp100/l6y_gp100.urdf"}
+    )
+
+
+async def gripper_handler(request):
+    global robot
+    if robot is None:
+        return web.json_response({"error": "Robot not initialized"}, status=503)
     try:
         data = await request.json()
-        joint_name = data.get("joint_name")
-        angle = data.get("angle")
-        joint_idx = robot.joint_names.index(joint_name) if joint_name in robot.joint_names else -1
-        if joint_idx >= 0:
-            q = np.zeros(robot.num_joints)
-            current_state = robot.get_state()
-            q[:] = current_state["q"]
-            q[joint_idx] = angle
-            robot.set_command(q)
-        return web.json_response({"status": "success"})
+        distance = data.get("distance", 0.05)
+        if distance < 0.01:
+            distance = 0.01
+        elif distance > 0.1:
+            distance = 0.1
+        robot.set_gripper_distance(distance)
+        return web.json_response({"status": "success", "distance": distance})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def get_urdf_handler(request):
-    return web.json_response({"url": f"http://localhost:{PORT}/assets/xpkg_urdf_archer_l6y/xpkg_urdf_archer_l6y.urdf"})
+async def gripper_distance_handler(request):
+    global robot
+    if robot is None:
+        return web.json_response({"error": "Robot not initialized"}, status=503)
+    try:
+        distance = robot.get_gripper_distance()
+        return web.json_response({"distance": distance})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 
 @web.middleware
@@ -298,7 +326,8 @@ app.add_routes(
     [
         web.get("/ws", websocket_handler),
         web.get("/urdf", get_urdf_handler),
-        web.post("/api/joint/set", joint_command_handler),
+        web.post("/api/gripper/set", gripper_handler),
+        web.get("/api/gripper/distance", gripper_distance_handler),
         web.post("/api/record", record_handler),
         web.static("/assets", os.path.abspath(STATIC_PATH)),
     ]

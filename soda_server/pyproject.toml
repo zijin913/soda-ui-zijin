@@ -17,4 +17,5 @@ dependencies = [
     "trimesh>=4.0.0",
     "pillow>=10.0.0",
     "hex-zmq-servers>=0.3.15",
+    "msgpack>=1.0.8",
 ]

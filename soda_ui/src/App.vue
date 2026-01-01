@@ -14,7 +14,7 @@
         <CameraPanel :imageUrl="cameraRgbUrl" />
 
         <!-- Right Sidebar (Data & Controls) -->
-        <RightSidebar :historyData="chartDataHistory" :jointNames="jointNames" />
+        <RightSidebar :historyData="chartDataHistory" :jointNames="jointNames" :gripperDistance="gripperDistance" />
       </main>
 
     </div>
@@ -23,6 +23,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
+import * as msgpack from '@msgpack/msgpack';
 import TopBar from './components/TopBar.vue';
 import CameraPanel from './components/CameraPanel.vue';
 import RightSidebar from './components/RightSidebar.vue';
@@ -36,6 +37,7 @@ const showPointCloud = ref(true);
 const MAX_HISTORY = 500;
 const jointNames = ref({});
 const chartDataHistory = ref({});
+const gripperDistance = ref(0);
 
 // WebSocket Logic
 let socket = null;
@@ -51,61 +53,63 @@ const initWebSocket = () => {
 
   socket.onmessage = (event) => {
     const data = event.data;
-    if (typeof data === 'string') {
-      try {
-        const telemetry = JSON.parse(data);
-        handleTelemetry(telemetry);
-      } catch (e) { console.error(e); }
-    } else if (data instanceof ArrayBuffer) {
-      handleBinaryData(data);
+    if (data instanceof ArrayBuffer) {
+      handleMessagepackData(data);
     }
   };
 };
 
-const handleTelemetry = (data) => {
-  if (data.joints && Array.isArray(data.joints)) {
-    data.joints.forEach(joint => {
-      const id = joint.id;
-      if (joint.name) {
-        jointNames.value[id] = joint.name;
-      }
-      if (!chartDataHistory.value[id]) {
-        chartDataHistory.value[id] = { angle: [], velocity: [], torque: [] };
-      }
-      chartDataHistory.value[id].angle.push(joint.angle || 0);
-      chartDataHistory.value[id].velocity.push(joint.velocity || 0);
-      chartDataHistory.value[id].torque.push(joint.torque || 0);
-      
-      if (chartDataHistory.value[id].angle.length > MAX_HISTORY) chartDataHistory.value[id].angle.shift();
-      if (chartDataHistory.value[id].velocity.length > MAX_HISTORY) chartDataHistory.value[id].velocity.shift();
-      if (chartDataHistory.value[id].torque.length > MAX_HISTORY) chartDataHistory.value[id].torque.shift();
-    });
-    
-    window.dispatchEvent(new CustomEvent('mujoco-joint-states', { detail: data.joints }));
-  }
-};
-
-const handleBinaryData = (arrayBuffer) => {
+const handleMessagepackData = (arrayBuffer) => {
   const view = new DataView(arrayBuffer);
-  const header = view.getUint8(0);
-  if (header === 0x01) {
-    const imageBytes = arrayBuffer.slice(1);
-    const blob = new Blob([imageBytes], { type: 'image/jpeg' });
-    const newUrl = URL.createObjectURL(blob);
-    if (cameraRgbUrl.value) URL.revokeObjectURL(cameraRgbUrl.value);
-    cameraRgbUrl.value = newUrl;
-  } else if (header === 0x02) {
-    const pcBytes = arrayBuffer.slice(1);
-    const float32Array = new Float32Array(pcBytes);
-    const points = [];
-    const colors = [];
-    // XYZRGB format: 6 floats per point (x, y, z, r, g, b)
-    for (let i = 0; i < float32Array.length; i += 6) {
-      points.push([float32Array[i], float32Array[i + 1], float32Array[i + 2]]);
-      colors.push([float32Array[i + 3], float32Array[i + 4], float32Array[i + 5]]);
+  const length = view.getUint32(0, true);
+  const packedData = new Uint8Array(arrayBuffer, 4, length);
+
+  try {
+    const data = msgpack.decode(packedData);
+
+    // Handle video frame
+    if (data.video) {
+      const blob = new Blob([data.video], { type: 'image/jpeg' });
+      const newUrl = URL.createObjectURL(blob);
+      if (cameraRgbUrl.value) URL.revokeObjectURL(cameraRgbUrl.value);
+      cameraRgbUrl.value = newUrl;
     }
-    pointCloudData.value = { points, colors };
-    window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points, colors } }));
+
+    // Handle point cloud
+    if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
+      const points = data.pointcloud;
+      pointCloudData.value = { points };
+      window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points } }));
+    }
+
+    // Handle joints
+    if (data.joints && Array.isArray(data.joints)) {
+      data.joints.forEach(joint => {
+        const id = joint.id;
+        if (joint.name) {
+          jointNames.value[id] = joint.name;
+        }
+        if (!chartDataHistory.value[id]) {
+          chartDataHistory.value[id] = { angle: [], velocity: [], torque: [] };
+        }
+        chartDataHistory.value[id].angle.push(joint.angle || 0);
+        chartDataHistory.value[id].velocity.push(joint.velocity || 0);
+        chartDataHistory.value[id].torque.push(joint.torque || 0);
+
+        if (chartDataHistory.value[id].angle.length > MAX_HISTORY) chartDataHistory.value[id].angle.shift();
+        if (chartDataHistory.value[id].velocity.length > MAX_HISTORY) chartDataHistory.value[id].velocity.shift();
+        if (chartDataHistory.value[id].torque.length > MAX_HISTORY) chartDataHistory.value[id].torque.shift();
+      });
+
+      window.dispatchEvent(new CustomEvent('mujoco-joint-states', { detail: data.joints }));
+    }
+
+    // Handle gripper distance
+    if (typeof data.gripper_distance === 'number') {
+      gripperDistance.value = data.gripper_distance * 1000;
+    }
+  } catch (e) {
+    console.error('Failed to decode MessagePack:', e);
   }
 };
 
