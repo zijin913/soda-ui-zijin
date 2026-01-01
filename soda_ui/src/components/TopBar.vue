@@ -13,6 +13,16 @@
           <div class="record-dot" :class="{ 'recording': isRecording }"></div>
         </button>
 
+        <!-- Recordings Dropdown -->
+        <div class="recordings-dropdown-wrapper">
+          <select v-model="selectedRecording" class="recordings-select">
+            <option value="">Select Recording</option>
+            <option v-for="file in recordingFiles" :key="file" :value="file">
+              {{ file }}
+            </option>
+          </select>
+        </div>
+
         <div class="divider"></div>
 
         <!-- Mouse Tool -->
@@ -66,7 +76,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import LogoIcon from '@/components/icons/LogoIcon.vue';
 import HandToolIcon from '@/components/icons/HandToolIcon.vue';
 import MoveToolIcon from '@/components/icons/MoveToolIcon.vue';
@@ -87,6 +97,8 @@ const isDropdownOpen = ref(false);
 const isCoordinateActive = ref(false);
 const isDepthActive = ref(false);
 const isRecording = ref(false);
+const recordingFiles = ref([]);
+const selectedRecording = ref('');
 
 const toggleDropdown = () => {
   isDropdownOpen.value = !isDropdownOpen.value;
@@ -120,6 +132,7 @@ const toggleRecord = async () => {
     });
     if (response.ok) {
       emit('toggleRecord', isRecording.value);
+      await fetchRecordings();
     } else {
       isRecording.value = !isRecording.value; // Revert on failure
     }
@@ -128,6 +141,22 @@ const toggleRecord = async () => {
     isRecording.value = !isRecording.value; // Revert on error
   }
 };
+
+const fetchRecordings = async () => {
+  try {
+    const response = await fetch('http://localhost:8080/api/recordings');
+    if (response.ok) {
+      const data = await response.json();
+      recordingFiles.value = data.files || [];
+    }
+  } catch (error) {
+    console.error('Failed to fetch recordings:', error);
+  }
+};
+
+onMounted(() => {
+  fetchRecordings();
+});
 </script>
 
 <style scoped>
@@ -166,6 +195,13 @@ const toggleRecord = async () => {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.divider {
+  width: 1px;
+  height: 40px;
+  background: #424548;
+  margin: 0 8px;
 }
 
 .tool-btn {
@@ -267,5 +303,33 @@ const toggleRecord = async () => {
 
 .tool-indicator.active {
   opacity: 1;
+}
+
+.recordings-dropdown-wrapper {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.recordings-select {
+  background: #2D2F31;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  min-width: 120px;
+  max-width: 200px;
+}
+
+.recordings-select:hover {
+  background: #424548;
+}
+
+.recordings-select option {
+  background: #2D2F31;
+  color: white;
 }
 </style>

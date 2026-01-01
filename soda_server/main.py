@@ -333,6 +333,22 @@ async def get_gripper_joints_handler(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def get_recordings_handler(request):
+    """获取 recordings 文件夹中的所有录制文件"""
+    try:
+        if not os.path.exists(RECORDING_DIR):
+            return web.json_response({"files": []})
+
+        files = []
+        for filename in os.listdir(RECORDING_DIR):
+            if os.path.isfile(os.path.join(RECORDING_DIR, filename)):
+                files.append(filename)
+
+        return web.json_response({"files": files})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
 @web.middleware
 async def cors_middleware(request, handler):
     if request.method == "OPTIONS":
@@ -365,6 +381,7 @@ app.add_routes(
         web.get("/api/gripper/distance", gripper_distance_handler),
         web.get("/api/joints/gripper", get_gripper_joints_handler),
         web.post("/api/record", record_handler),
+        web.get("/api/recordings", get_recordings_handler),
         web.static("/assets", os.path.abspath(STATIC_PATH)),
     ]
 )
