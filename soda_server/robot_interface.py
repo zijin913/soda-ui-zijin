@@ -151,7 +151,7 @@ class SimRobot(RobotInterface):
         # 将 numpy 数组映射回 MujocoManager 需要的 {id: angle} 格式
         # 或者直接调用 set_joint_target_by_name
         for i, target_angle in enumerate(q):
-            # 方式1: 按索引
+            # 方式1: 按索引·
             self.sim_manager.set_joint_target(i, target_angle)
 
             # 方式2 (更安全): 按名称

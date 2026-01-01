@@ -6,9 +6,19 @@
         <GripperIcon />
         <span>Gripper</span>
       </div>
-      <div class="gripper-value">
-        <span class="val">20</span>
-        <span class="unit">mm</span>
+      <div class="gripper-controls">
+        <input
+          type="range"
+          class="gripper-slider"
+          v-model="gripperValue"
+          min="0"
+          max="100"
+          @input="emit('gripper-change', gripperValue)"
+        />
+        <div class="gripper-value">
+          <span class="val">{{ gripperValue }}</span>
+          <span class="unit">mm</span>
+        </div>
       </div>
     </div>
 
@@ -47,6 +57,10 @@ const props = defineProps({
   historyData: { type: Object, required: true },
   jointNames: { type: Object, default: () => ({}) }
 });
+
+const emit = defineEmits(['gripper-change']);
+
+const gripperValue = ref(20);
 
 const activeTab = ref('Angle');
 
@@ -121,9 +135,16 @@ const generatePath = (jointIndex) => {
 
 .gripper-block {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.gripper-controls {
+  display: flex;
   align-items: center;
-  height: 80px;
+  gap: 12px;
+  width: 100%;
 }
 
 .gripper-value {
@@ -134,6 +155,37 @@ const generatePath = (jointIndex) => {
   align-items: baseline;
   gap: 4px;
   color: white;
+  width: fit-content;
+}
+
+.gripper-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: #2D2F31;
+  outline: none;
+  cursor: pointer;
+}
+
+.gripper-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3DCDA5;
+  cursor: pointer;
+}
+
+.gripper-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3DCDA5;
+  cursor: pointer;
+  border: none;
 }
 
 .velocity-block {
