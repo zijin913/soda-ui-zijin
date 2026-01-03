@@ -2,6 +2,11 @@
   <div class="robot-stage-3d" ref="canvasContainer">
     <!-- 装饰性的底层光效 -->
     <div class="glow-overlay"></div>
+
+    <!-- Limit Toast -->
+    <div class="limit-toast" :class="{ visible: showLimitToast }">
+      <span>⚠️ Limit Reached</span>
+    </div>
   </div>
 </template>
 
@@ -18,11 +23,16 @@ const props = defineProps({
   mode: { type: String, default: 'realtime' }
 });
 
+const emit = defineEmits(['joint-limits-loaded']);
+
 const JOINT_CONTROL_HZ = 30;
 let jointControlTimer = null;
 let accumulatedDeltaAngle = 0;
 
 const canvasContainer = ref(null);
+const showLimitToast = ref(false); // Toast state
+let limitToastTimer = null;
+
 let scene, camera, renderer, controls, loader;
 let raycaster, pointer;
 let robotModel = null;
@@ -44,6 +54,15 @@ let gripperJointNames = [];
 watch(() => props.mode, (newMode) => {
   console.log('Mode changed to:', newMode);
 });
+
+// Helper to show toast
+const triggerLimitToast = () => {
+  showLimitToast.value = true;
+  if (limitToastTimer) clearTimeout(limitToastTimer);
+  limitToastTimer = setTimeout(() => {
+    showLimitToast.value = false;
+  }, 1500);
+};
 
 // Three.js Logic (保持原有的大部分代码，略微精简)
 const initScene = () => {
@@ -117,6 +136,20 @@ const initScene = () => {
         const box = new THREE.Box3().setFromObject(robot);
         const center = box.getCenter(new THREE.Vector3());
         robot.position.sub(center);
+
+        // Extract and emit joint limits
+        const limits = {};
+        if (robot.joints) {
+          for (const [name, joint] of Object.entries(robot.joints)) {
+            if (joint.limits) {
+              limits[name] = {
+                lower: joint.limits.lower,
+                upper: joint.limits.upper
+              };
+            }
+          }
+        }
+        emit('joint-limits-loaded', limits);
       });
     } catch (error) {
       console.error('Failed to load URDF:', error);
@@ -375,15 +408,34 @@ const onWheel = (event) => {
 
   const degreesPerScroll = 1;
   const angleDelta = (event.deltaY / 100) * degreesPerScroll * (Math.PI / 180);
-  let newAngle = initialJointAngle - angleDelta;
+  
+  // Use current initial angle (which tracks the latest local state)
+  let potentialNewAngle = initialJointAngle - angleDelta;
+  let clampedAngle = potentialNewAngle;
 
   if (draggingJoint.limits) {
-    if (newAngle < draggingJoint.limits.lower) newAngle = draggingJoint.limits.lower;
-    if (newAngle > draggingJoint.limits.upper) newAngle = draggingJoint.limits.upper;
+    if (potentialNewAngle < draggingJoint.limits.lower) clampedAngle = draggingJoint.limits.lower;
+    if (potentialNewAngle > draggingJoint.limits.upper) clampedAngle = draggingJoint.limits.upper;
   }
 
-  initialJointAngle = newAngle;
-  accumulatedDeltaAngle -= angleDelta;
+  // Determine actual change allowed
+  const actualChange = clampedAngle - initialJointAngle;
+
+  // Check if blocked (trying to move but stuck)
+  if (Math.abs(angleDelta) > 1e-6 && Math.abs(actualChange) < 1e-6) {
+    // Only trigger if we are actively trying to push past the limit
+    // i.e., angleDelta is pushing further in the direction of the limit
+    const isPushingLower = angleDelta > 0 && Math.abs(initialJointAngle - draggingJoint.limits.lower) < 1e-4;
+    const isPushingUpper = angleDelta < 0 && Math.abs(initialJointAngle - draggingJoint.limits.upper) < 1e-4;
+    
+    if (isPushingLower || isPushingUpper) {
+        triggerLimitToast();
+    }
+  }
+
+  initialJointAngle = clampedAngle;
+  // Accumulate only the allowed change to send to backend
+  accumulatedDeltaAngle += actualChange;
 };
 
 const onPointerUp = () => {
@@ -596,12 +648,67 @@ onUnmounted(() => {
 }
 
 .glow-overlay {
+
   position: absolute;
+
   bottom: -10%;
+
   left: 50%;
+
   transform: translateX(-50%);
+
   width: 80%;
+
   height: 20%;
+
   pointer-events: none;
+
 }
+
+
+
+.limit-toast {
+
+  position: absolute;
+
+  top: 20px;
+
+  left: 50%;
+
+  transform: translateX(-50%) translateY(-20px);
+
+  background: rgba(255, 50, 50, 0.8);
+
+  color: white;
+
+  padding: 8px 16px;
+
+  border-radius: 8px;
+
+  font-weight: bold;
+
+  font-size: 14px;
+
+  backdrop-filter: blur(4px);
+
+  opacity: 0;
+
+  transition: opacity 0.3s, transform 0.3s;
+
+  pointer-events: none;
+
+  z-index: 1000;
+
+}
+
+
+
+.limit-toast.visible {
+
+  opacity: 1;
+
+  transform: translateX(-50%) translateY(0);
+
+}
+
 </style>

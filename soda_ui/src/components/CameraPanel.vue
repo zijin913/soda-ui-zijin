@@ -42,8 +42,8 @@ defineProps({
 
 .camera-panel {
   position: absolute;
-  left: 24px;
-  top: 72px;
+  left: 1.5rem;
+  top: 1rem;
   width: 371px;
   height: 272px;
 }

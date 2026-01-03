@@ -14,7 +14,12 @@
       <!-- 2. Main Viewport -->
       <main class="main-viewport">
         <!-- 3D Component -->
-          <RobotViewport :pointCloudData="pointCloudData" :showPointCloud="showPointCloud" :mode="currentMode" />
+          <RobotViewport 
+            :pointCloudData="pointCloudData" 
+            :showPointCloud="showPointCloud" 
+            :mode="currentMode"
+            @joint-limits-loaded="handleJointLimits"
+          />
 
         <!-- Floating Camera Panel -->
         <CameraPanel :imageUrl="cameraRgbUrl" />
@@ -28,6 +33,7 @@
           :mode="currentMode"
           :currentFrame="replayCurrentFrame"
           :totalFrames="replayTotalFrames"
+          :jointLimits="jointLimits"
         />
       </main>
 
@@ -66,6 +72,7 @@ const showPointCloud = ref(true);
 const MAX_HISTORY = 500;
 const jointNames = ref({});
 const chartDataHistory = ref({});
+const jointLimits = ref({});
 const gripperDistance = ref(0);
 
 // Replay state
@@ -133,6 +140,10 @@ const initWebSocket = () => {
       handleMessagepackData(data);
     }
   };
+};
+
+const handleJointLimits = (limits) => {
+  jointLimits.value = limits;
 };
 
 const updateJoints = (joints) => {

@@ -107,12 +107,12 @@ const onSeek = (event) => {
   bottom: 0;
   left: 0;
   width: 100%;
-  height: 140px; /* Reduced height since markers are gone */
-  background: #303130;
+  height: 90px;
+  background: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 16px;
+  padding-top: 8px;
   box-sizing: border-box;
   z-index: 100;
 }
@@ -122,7 +122,7 @@ const onSeek = (event) => {
   display: flex;
   align-items: center;
   gap: 24px;
-  margin-bottom: 16px;
+  margin-bottom: 4px;
 }
 
 .control-btn {
@@ -141,13 +141,13 @@ const onSeek = (event) => {
 }
 
 .control-btn.small {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
 }
 
 .control-btn.large {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   background: rgba(255, 255, 255, 0.1);
 }
 .control-btn.large:hover {
@@ -164,7 +164,7 @@ const onSeek = (event) => {
 
 .time-display {
   font-family: 'Inter', monospace;
-  font-size: 14px;
+  font-size: 13px;
   color: #FFFFFF;
   opacity: 0.8;
   min-width: 80px;
@@ -176,7 +176,7 @@ const onSeek = (event) => {
 .timeline-track-wrapper {
   position: relative;
   flex: 1;
-  height: 60px;
+  height: 32px;
   display: flex;
   align-items: center;
 }
@@ -206,24 +206,27 @@ const onSeek = (event) => {
 /* Custom Pointer */
 .custom-pointer {
   position: absolute;
-  top: 0;
-  height: 100%;
-  width: 0;
+  top: -4px;
+  height: calc(100% + 4px);
+  width: 13px;
   pointer-events: none;
-  transform: translateX(-6.5px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
 }
 
 .pointer-head {
   width: 13px;
-  height: 15px;
+  height: 12px;
   background: #F7F7F7;
   clip-path: polygon(0 0, 100% 0, 50% 100%);
+  flex-shrink: 0;
 }
 
 .pointer-line {
-  width: 3px;
-  height: 100%;
+  width: 2px;
+  flex: 1;
   background: #F7F7F7;
-  margin: 0 auto;
 }
 </style>

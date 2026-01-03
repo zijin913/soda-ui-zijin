@@ -7,15 +7,22 @@
         <span>Gripper</span>
       </div>
        <div class="gripper-controls">
-         <input
-           type="range"
-           class="gripper-slider"
-           v-model="gripperValue"
-           min="10"
-           max="100"
-         />
+         <div class="slider-wrapper">
+           <input
+             type="range"
+             class="gripper-slider"
+             v-model="targetGripperValue"
+             min="10"
+             max="100"
+             @input="onSliderChange"
+           />
+           <div
+             class="current-indicator"
+             :style="{ left: currentIndicatorLeft }"
+           ></div>
+         </div>
          <div class="gripper-value">
-           <span class="val">{{ gripperValue }}</span>
+           <span class="val">{{ targetGripperValue }}</span>
            <span class="unit">mm</span>
          </div>
        </div>
@@ -40,7 +47,9 @@
             </div>
           </div>
           <div class="chart-visual">
-            <div class="y-axis"><span>1</span><span>0</span><span>-1</span><span>-2</span></div>
+            <div class="y-axis">
+              <span v-for="(label, idx) in getYAxisLabels(id)" :key="idx">{{ label }}</span>
+            </div>
             <div class="waveform">
               <svg width="100%" height="100%" viewBox="0 0 500 50" preserveAspectRatio="none">
                 <!-- Data Path -->
@@ -67,7 +76,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import GripperIcon from '@/components/icons/GripperIcon.vue';
 
 const props = defineProps({
@@ -77,19 +86,40 @@ const props = defineProps({
   fullData: { type: Object, default: () => ({}) },
   mode: { type: String, default: 'realtime' },
   currentFrame: { type: Number, default: 0 },
-  totalFrames: { type: Number, default: 0 }
+  totalFrames: { type: Number, default: 0 },
+  jointLimits: { type: Object, default: () => ({}) }
 });
 
 const emit = defineEmits(['gripper-change']);
 
-const gripperValue = computed({
-  get: () => Math.round(props.gripperDistance),
-  set: (value) => {
-    emit('gripper-change', value);
-    if (window.sendGripperSet) {
-      window.sendGripperSet(value);
-    }
+const targetGripperValue = ref(Math.round(props.gripperDistance) || 10);
+const userInteracted = ref(false);
+
+watch(() => props.gripperDistance, (newVal) => {
+  if (!userInteracted.value) {
+    targetGripperValue.value = Math.round(newVal);
   }
+});
+
+const onSliderChange = () => {
+  userInteracted.value = true;
+  const val = Number(targetGripperValue.value);
+  emit('gripper-change', val);
+  if (window.sendGripperSet) {
+    window.sendGripperSet(val);
+  }
+};
+
+const currentIndicatorLeft = computed(() => {
+  const val = props.gripperDistance;
+  const min = 10;
+  const max = 100;
+  const clamped = Math.max(min, Math.min(max, val));
+  const percent = (clamped - min) / (max - min);
+  // (100% - 16px) is the available track width for center-to-center movement
+  // + 8px is the start offset (half thumb width)
+  // - 4px centers the 8px indicator
+  return `calc((100% - 16px) * ${percent} + 4px)`;
 });
 
 const activeTab = ref('Angle');
@@ -114,6 +144,26 @@ const getCursorX = () => {
   const relativeIndex = props.currentFrame - start;
   // SVG viewBox width is 500 (matching VIEW_WINDOW for 1:1 mapping)
   return relativeIndex; 
+};
+
+const getLimitRange = (id) => {
+  const name = props.jointNames[id];
+  const limit = name ? props.jointLimits[name] : null;
+  // Default range if no limits found: -3.14 to 3.14 (approx -Pi to Pi)
+  if (!limit) return { min: -3.14, max: 3.14 };
+  return { min: limit.lower, max: limit.upper };
+};
+
+const getYAxisLabels = (id) => {
+  if (activeTab.value !== 'Angle') return ['1', '0', '-1', '-2'];
+  
+  const { min, max } = getLimitRange(id);
+  // Show Max, Mid, Min
+  return [
+    max.toFixed(1),
+    ((max + min) / 2).toFixed(1),
+    min.toFixed(1)
+  ];
 };
 
 const getCurrentValue = (id) => {
@@ -162,17 +212,41 @@ const generatePath = (jointIndex) => {
   const height = 50;
   // X step is 1 since width=500 and data len <= 500
   const step = 1; 
-  const range = 6; // Y range assumption
-  const mid = height / 2;
-  const scaleY = (height * 0.8) / range;
+  
+  let minVal = -3;
+  let maxVal = 3;
 
-  let path = `M0 ${mid}`;
+  if (activeTab.value === 'Angle') {
+    const range = getLimitRange(jointIndex);
+    minVal = range.min;
+    maxVal = range.max;
+  } else if (activeTab.value === 'Velocity') {
+     // Approx range for velocity
+     minVal = -2; maxVal = 2;
+  } else {
+     // Approx range for torque
+     minVal = -50; maxVal = 50;
+  }
+  
+  const range = maxVal - minVal;
+  const scaleY = (height * 0.8) / (range || 1); // Avoid div by zero
+  const midOffset = (height / 2) - ((maxVal + minVal) / 2 * -scaleY); 
+  // Wait, let's map: val -> y
+  // y = 0 is top, y = height is bottom.
+  // We want map [minVal, maxVal] to [height*0.9, height*0.1] (padding)
+  
+  const mapY = (val) => {
+    // Normalizing val to 0..1 based on min/max
+    const pct = (val - minVal) / (range || 1);
+    // Invert because SVG y=0 is top
+    return height * 0.9 - (pct * height * 0.8);
+  };
+
+  let path = '';
 
   data.forEach((val, index) => {
     const x = index * step;
-    const y = mid - (val * scaleY);
-    // Clamp Y to stay within visual bounds? SVG clip handles it but clamped path is cleaner
-    // const clampedY = Math.max(0, Math.min(height, y));
+    const y = mapY(val);
     if (index === 0) path = `M${x} ${y}`;
     else path += ` L${x} ${y}`;
   });
@@ -223,6 +297,28 @@ const generatePath = (jointIndex) => {
   align-items: center;
   gap: 12px;
   width: 100%;
+}
+
+.slider-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+
+.current-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  background: #FF5555;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 0 2px rgba(0,0,0,0.5);
+  transition: left 0.1s linear;
 }
 
 .gripper-value {
