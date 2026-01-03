@@ -3,12 +3,12 @@
     <div class="dashboard-container">
       
       <!-- 1. Top Navigation -->
-      <TopBar v-model="currentMouseTool" @toggleDepth="showPointCloud = $event" @toggleRecord="handleRecordToggle" />
+      <TopBar v-model="currentMouseTool" @toggleDepth="showPointCloud = $event" @toggleRecord="handleRecordToggle" @modeChanged="handleModeChange" />
 
       <!-- 2. Main Viewport -->
       <main class="main-viewport">
         <!-- 3D Component -->
-        <RobotViewport :pointCloudData="pointCloudData" :showPointCloud="showPointCloud" />
+          <RobotViewport :pointCloudData="pointCloudData" :showPointCloud="showPointCloud" :mode="currentMode" />
 
         <!-- Floating Camera Panel -->
         <CameraPanel :imageUrl="cameraRgbUrl" />
@@ -31,6 +31,7 @@ import RobotViewport from './components/RobotViewport.vue';
 
 // State
 const currentMouseTool = ref('hand');
+const currentMode = ref('realtime');
 const cameraRgbUrl = ref(null);
 const pointCloudData = ref(null);
 const showPointCloud = ref(true);
@@ -127,6 +128,11 @@ const handleMessagepackData = (arrayBuffer) => {
 
 const handleRecordToggle = (isRecording) => {
   console.log('Recording:', isRecording ? 'started' : 'stopped');
+};
+
+const handleModeChange = (newMode) => {
+  currentMode.value = newMode;
+  console.log('Mode changed to:', newMode);
 };
 
 onMounted(() => {

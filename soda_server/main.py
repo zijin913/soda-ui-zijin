@@ -11,6 +11,7 @@ import msgpack
 
 from mujoco_manager import MujocoManager
 from robot_interface import SimRobot
+from replay_manager import ReplayManager
 
 # 唯一需要的日志依赖
 from urdf_logger import URDFLogger
@@ -28,6 +29,8 @@ RECORDING_DIR = "recordings"
 
 # 全局变量
 robot = None
+current_mode = "realtime"  # "realtime" or "replay"
+replay_manager = None  # ReplayManager 实例
 
 # 录制相关状态
 recording_enabled = False
@@ -167,10 +170,14 @@ async def message_handler(ws):
                     data = json.loads(msg.data)
                     msg_type = data.get("type")
 
-                    if msg_type == "joint_command":
-                        await handle_joint_command(ws, data)
-                    elif msg_type == "gripper_set":
-                        await handle_gripper_set(ws, data)
+                    if current_mode == "realtime":
+                        if msg_type == "joint_command":
+                            await handle_joint_command(ws, data)
+                        elif msg_type == "gripper_set":
+                            await handle_gripper_set(ws, data)
+                    else:
+                        # In replay mode, ignore control commands
+                        pass
                 except json.JSONDecodeError:
                     pass
     except Exception as e:
@@ -179,65 +186,116 @@ async def message_handler(ws):
 
 async def broadcast_handler(ws):
     """定时发送数据的协程"""
-    global robot, urdf_logger
+    global robot, urdf_logger, replay_manager, current_mode
 
     try:
         while not ws.closed:
             start_time = time.time()
             current_ts = time.time()
 
-            # 1. 读取视频帧
-            frame = robot.get_rgb()
+            if current_mode == "realtime":
+                # Realtime mode: Get data from robot
+                frame = robot.get_rgb()
 
-            # 2. 物理引擎步进 & 获取状态
-            robot.step()
-            state = robot.get_state()
-            joint_states = state_to_joint_states(state, robot.joint_names)
+                robot.step()
+                state = robot.get_state()
+                joint_states = state_to_joint_states(state, robot.joint_names)
 
-            # 3. 记录数据
-            if recording_enabled and urdf_logger is not None:
-                urdf_logger.set_time(current_ts)
+                # 记录数据
+                if recording_enabled and urdf_logger is not None:
+                    urdf_logger.set_time(current_ts)
 
+                    if frame is not None:
+                        urdf_logger.log_image("camera/rgb", frame)
+
+                    pointcloud_data = robot.get_point_cloud()
+                    if pointcloud_data is not None and len(pointcloud_data) > 0:
+                        urdf_logger.log_points(
+                            "pointcloud", pointcloud_data, colors=[0, 255, 0]
+                        )
+
+                    joint_map = {j["name"]: j["angle"] for j in joint_states}
+                    urdf_logger.update_joints(joint_map)
+
+                    for joint in joint_states:
+                        base_path = f"joints/{joint['name']}"
+                        urdf_logger.log_scalar(f"{base_path}/angle", joint["angle"])
+                        urdf_logger.log_scalar(
+                            f"{base_path}/velocity", joint["velocity"]
+                        )
+                        urdf_logger.log_scalar(f"{base_path}/torque", joint["torque"])
+
+                # Prepare data for sending
+                video_bytes = None
                 if frame is not None:
-                    urdf_logger.log_image("camera/rgb", frame)
+                    _, buffer = cv2.imencode(
+                        ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                    )
+                    video_bytes = buffer.tobytes()
 
                 pointcloud_data = robot.get_point_cloud()
-                if pointcloud_data is not None and len(pointcloud_data) > 0:
-                    urdf_logger.log_points(
-                        "pointcloud", pointcloud_data, colors=[0, 255, 0]
+                pc_data = None
+                if pointcloud_data is not None:
+                    pc_data = pointcloud_data.tolist()
+
+                gripper_distance = robot.get_gripper_distance()
+
+                packed_data = {
+                    "timestamp": current_ts,
+                    "video": video_bytes,
+                    "pointcloud": pc_data,
+                    "joints": joint_states,
+                    "gripper_distance": gripper_distance,
+                    "mode": "realtime",
+                }
+
+            else:
+                # Replay mode: Get data from replay_manager
+                if replay_manager is None:
+                    await asyncio.sleep(0.1)
+                    continue
+
+                frame_data = replay_manager.get_current_frame()
+                if frame_data is None:
+                    await asyncio.sleep(0.1)
+                    continue
+
+                # Prepare data from recording
+                video_bytes = None
+                if frame_data.get("video") is not None:
+                    _, buffer = cv2.imencode(
+                        ".jpg", frame_data["video"], [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                    )
+                    video_bytes = buffer.tobytes()
+
+                pc_data = frame_data.get("pointcloud")
+                if pc_data is not None:
+                    pc_data = pc_data.tolist()
+
+                # Convert joint data to standard format
+                joint_states = []
+                joints_data = frame_data.get("joints", {})
+                for joint_name, joint_values in joints_data.items():
+                    joint_states.append(
+                        {
+                            "name": joint_name,
+                            "angle": float(joint_values.get("angle", 0.0)),
+                            "velocity": float(joint_values.get("velocity", 0.0)),
+                            "torque": float(joint_values.get("torque", 0.0)),
+                        }
                     )
 
-                joint_map = {j["name"]: j["angle"] for j in joint_states}
-                urdf_logger.update_joints(joint_map)
+                packed_data = {
+                    "timestamp": frame_data["timestamp"],
+                    "video": video_bytes,
+                    "pointcloud": pc_data,
+                    "joints": joint_states,
+                    "gripper_distance": 0.05,
+                    "mode": "replay",
+                }
 
-                for joint in joint_states:
-                    base_path = f"joints/{joint['name']}"
-                    urdf_logger.log_scalar(f"{base_path}/angle", joint["angle"])
-                    urdf_logger.log_scalar(f"{base_path}/velocity", joint["velocity"])
-                    urdf_logger.log_scalar(f"{base_path}/torque", joint["torque"])
-
-            # 4. 使用 MessagePack 统一发送数据
-            video_bytes = None
-            if frame is not None:
-                _, buffer = cv2.imencode(
-                    ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-                )
-                video_bytes = buffer.tobytes()
-
-            pointcloud_data = robot.get_point_cloud()
-            pc_data = None
-            if pointcloud_data is not None:
-                pc_data = pointcloud_data.tolist()
-
-            gripper_distance = robot.get_gripper_distance()
-
-            packed_data = {
-                "timestamp": current_ts,
-                "video": video_bytes,
-                "pointcloud": pc_data,
-                "joints": joint_states,
-                "gripper_distance": gripper_distance,
-            }
+                # Auto-advance in replay mode
+                replay_manager.next_frame()
 
             packed_bytes = msgpack.packb(packed_data, use_bin_type=True)
             header = struct.pack("I", len(packed_bytes))
@@ -349,6 +407,123 @@ async def get_recordings_handler(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def set_mode_handler(request):
+    """设置运行模式（realtime 或 replay）"""
+    global current_mode, replay_manager
+
+    try:
+        data = await request.json()
+        new_mode = data.get("mode")
+
+        if new_mode not in ["realtime", "replay"]:
+            return web.json_response(
+                {"error": "Invalid mode. Use 'realtime' or 'replay'"}, status=400
+            )
+
+        current_mode = new_mode
+
+        # Reset replay manager when switching modes
+        if new_mode == "realtime":
+            replay_manager = None
+
+        return web.json_response({"status": "success", "mode": current_mode})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def load_replay_handler(request):
+    """加载回放文件"""
+    global replay_manager
+
+    try:
+        data = await request.json()
+        filename = data.get("filename")
+
+        if not filename:
+            return web.json_response({"error": "Filename is required"}, status=400)
+
+        filepath = os.path.join(RECORDING_DIR, filename)
+
+        if not os.path.exists(filepath):
+            return web.json_response({"error": "Recording file not found"}, status=404)
+
+        replay_manager = ReplayManager(filepath)
+
+        return web.json_response(
+            {
+                "status": "success",
+                "total_frames": replay_manager.total_frames,
+                "duration": replay_manager.get_duration(),
+            }
+        )
+    except Exception as e:
+        print(f"Failed to load replay: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def replay_control_handler(request):
+    """控制回放（播放、暂停、停止、跳转）"""
+    global replay_manager
+
+    try:
+        if replay_manager is None:
+            return web.json_response({"error": "No replay loaded"}, status=400)
+
+        data = await request.json()
+        action = data.get("action")
+
+        if action == "play":
+            replay_manager.is_playing = True
+        elif action == "pause":
+            replay_manager.is_playing = False
+        elif action == "stop":
+            replay_manager.reset()
+            replay_manager.is_playing = False
+        elif action == "seek":
+            frame_idx = data.get("frame_idx")
+            if frame_idx is not None:
+                replay_manager.seek_to_frame(frame_idx)
+        elif action == "seek_time":
+            timestamp = data.get("timestamp")
+            if timestamp is not None:
+                replay_manager.seek_to_time(timestamp)
+
+        return web.json_response(
+            {
+                "status": "success",
+                "current_frame": replay_manager.current_frame_idx,
+                "total_frames": replay_manager.total_frames,
+                "progress": replay_manager.get_progress(),
+                "current_timestamp": replay_manager.get_current_timestamp(),
+            }
+        )
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def get_replay_status_handler(request):
+    """获取当前回放状态"""
+    global replay_manager
+
+    try:
+        if replay_manager is None:
+            return web.json_response({"is_loaded": False})
+
+        return web.json_response(
+            {
+                "is_loaded": True,
+                "total_frames": replay_manager.total_frames,
+                "current_frame": replay_manager.current_frame_idx,
+                "progress": replay_manager.get_progress(),
+                "current_timestamp": replay_manager.get_current_timestamp(),
+                "duration": replay_manager.get_duration(),
+                "is_playing": replay_manager.is_playing,
+            }
+        )
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
 @web.middleware
 async def cors_middleware(request, handler):
     if request.method == "OPTIONS":
@@ -382,6 +557,10 @@ app.add_routes(
         web.get("/api/joints/gripper", get_gripper_joints_handler),
         web.post("/api/record", record_handler),
         web.get("/api/recordings", get_recordings_handler),
+        web.post("/api/mode/set", set_mode_handler),
+        web.post("/api/replay/load", load_replay_handler),
+        web.post("/api/replay/control", replay_control_handler),
+        web.get("/api/replay/status", get_replay_status_handler),
         web.static("/assets", os.path.abspath(STATIC_PATH)),
     ]
 )

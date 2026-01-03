@@ -8,19 +8,40 @@
 
       <!-- 中间工具栏 -->
       <div class="toolbar-group">
-        <!-- Record -->
-        <button class="tool-btn" :class="{ 'active': isRecording }" @click="toggleRecord">
+        <!-- Mode Toggle -->
+        <button class="tool-btn" :class="{ 'active': mode === 'realtime' }" @click="setMode('realtime')">
+          <span class="mode-label">RT</span>
+        </button>
+        <button class="tool-btn" :class="{ 'active': mode === 'replay' }" @click="setMode('replay')">
+          <span class="mode-label">RP</span>
+        </button>
+
+        <!-- Record (only in realtime mode) -->
+        <button v-if="mode === 'realtime'" class="tool-btn" :class="{ 'active': isRecording }" @click="toggleRecord">
           <div class="record-dot" :class="{ 'recording': isRecording }"></div>
         </button>
 
-        <!-- Recordings Dropdown -->
-        <div class="recordings-dropdown-wrapper">
-          <select v-model="selectedRecording" class="recordings-select">
+        <!-- Recordings Dropdown (only in replay mode) -->
+        <div v-if="mode === 'replay'" class="recordings-dropdown-wrapper">
+          <select v-model="selectedRecording" @change="loadRecording" class="recordings-select">
             <option value="">Select Recording</option>
             <option v-for="file in recordingFiles" :key="file" :value="file">
               {{ file }}
             </option>
           </select>
+        </div>
+
+        <!-- Replay Controls (only in replay mode) -->
+        <div v-if="mode === 'replay'" class="replay-controls">
+          <button class="tool-btn" @click="replayControl('play')">
+            <span class="control-icon">▶</span>
+          </button>
+          <button class="tool-btn" @click="replayControl('pause')">
+            <span class="control-icon">⏸</span>
+          </button>
+          <button class="tool-btn" @click="replayControl('stop')">
+            <span class="control-icon">⏹</span>
+          </button>
         </div>
 
         <div class="divider"></div>
@@ -90,7 +111,7 @@ const props = defineProps({
   modelValue: { type: String, default: 'hand' }
 });
 
-const emit = defineEmits(['update:modelValue', 'toggleDepth', 'toggleRecord']);
+const emit = defineEmits(['update:modelValue', 'toggleDepth', 'toggleRecord', 'modeChanged', 'replayControl']);
 
 const currentTool = ref(props.modelValue);
 const isDropdownOpen = ref(false);
@@ -99,6 +120,7 @@ const isDepthActive = ref(false);
 const isRecording = ref(false);
 const recordingFiles = ref([]);
 const selectedRecording = ref('');
+const mode = ref('realtime');
 
 const toggleDropdown = () => {
   isDropdownOpen.value = !isDropdownOpen.value;
@@ -151,6 +173,68 @@ const fetchRecordings = async () => {
     }
   } catch (error) {
     console.error('Failed to fetch recordings:', error);
+  }
+};
+
+const setMode = async (newMode) => {
+  try {
+    const response = await fetch('http://localhost:8080/api/mode/set', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ mode: newMode })
+    });
+
+    if (response.ok) {
+      mode.value = newMode;
+      emit('modeChanged', newMode);
+      if (newMode === 'replay') {
+        await fetchRecordings();
+      }
+    }
+  } catch (error) {
+    console.error('Failed to set mode:', error);
+  }
+};
+
+const loadRecording = async () => {
+  if (!selectedRecording.value) return;
+
+  try {
+    const response = await fetch('http://localhost:8080/api/replay/load', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ filename: selectedRecording.value })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Recording loaded:', data);
+    }
+  } catch (error) {
+    console.error('Failed to load recording:', error);
+  }
+};
+
+const replayControl = async (action) => {
+  try {
+    const response = await fetch('http://localhost:8080/api/replay/control', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ action })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      emit('replayControl', action, data);
+    }
+  } catch (error) {
+    console.error('Failed to control replay:', error);
   }
 };
 
@@ -331,5 +415,24 @@ onMounted(() => {
 .recordings-select option {
   background: #2D2F31;
   color: white;
+}
+
+.mode-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #888;
+}
+
+.mode-label.active {
+  color: white;
+}
+
+.replay-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.control-icon {
+  font-size: 16px;
 }
 </style>

@@ -14,7 +14,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 
 const props = defineProps({
   pointCloudData: { default: null },
-  showPointCloud: { type: Boolean, default: true }
+  showPointCloud: { type: Boolean, default: true },
+  mode: { type: String, default: 'realtime' }
 });
 
 const JOINT_CONTROL_HZ = 30;
@@ -38,6 +39,11 @@ let initialJointAngle = 0;
 
 // Gripper joints that should not be controlled via dragging
 let gripperJointNames = [];
+
+// Control disabled in replay mode
+watch(() => props.mode, (newMode) => {
+  console.log('Mode changed to:', newMode);
+});
 
 // Three.js Logic (保持原有的大部分代码，略微精简)
 const initScene = () => {
@@ -303,6 +309,12 @@ watch(() => props.showPointCloud, (newValue) => {
 });
 const onPointerDown = (event) => {
   if (!robotModel || event.button !== 0) return;
+
+  // Disable control in replay mode
+  if (props.mode === 'replay') {
+    console.log('Control disabled in replay mode');
+    return;
+  }
 
   const rect = canvasContainer.value.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
