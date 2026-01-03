@@ -31,19 +31,6 @@
           </select>
         </div>
 
-        <!-- Replay Controls (only in replay mode) -->
-        <div v-if="mode === 'replay'" class="replay-controls">
-          <button class="tool-btn" @click="replayControl('play')">
-            <span class="control-icon">▶</span>
-          </button>
-          <button class="tool-btn" @click="replayControl('pause')">
-            <span class="control-icon">⏸</span>
-          </button>
-          <button class="tool-btn" @click="replayControl('stop')">
-            <span class="control-icon">⏹</span>
-          </button>
-        </div>
-
         <div class="divider"></div>
 
         <!-- Mouse Tool -->
@@ -213,6 +200,7 @@ const loadRecording = async () => {
     if (response.ok) {
       const data = await response.json();
       console.log('Recording loaded:', data);
+      emit('recordingLoaded', selectedRecording.value);
     }
   } catch (error) {
     console.error('Failed to load recording:', error);

@@ -141,7 +141,9 @@ class SimRobot(RobotInterface):
             import os
 
             if os.path.exists(pointcloud_path):
-                self.pointcloud_data = np.load(pointcloud_path)
+                # Only take the first 3 columns (XYZ) and ensure float32
+                full_data = np.load(pointcloud_path)
+                self.pointcloud_data = full_data[:, :3].astype(np.float32)
             else:
                 self.pointcloud_data = np.zeros((0, 3), dtype=np.float32)
 

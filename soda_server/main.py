@@ -78,8 +78,8 @@ async def record_handler(request):
     """
     处理录制请求。
     逻辑：
-    - Start: 创建新的 URDFLogger 实例 (这会初始化新的 Rerun Session)，并绑定文件。
-    - Stop: 只是停止数据写入的标志位，因为是流式写入，不需要显式关闭文件。
+    - Start: 创建新的 URDFLogger 实例 (这会初始化新的 DuckDB 连接)，并绑定文件。
+    - Stop: 显式关闭 Logger 以断开 DB 连接。
     """
     global recording_enabled, urdf_logger, current_file_path
 
@@ -90,17 +90,14 @@ async def record_handler(request):
         if action == "start":
             # 1. 生成文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"rec_{timestamp}.rrd"
+            # Base name for parquet files
+            filename = f"rec_{timestamp}" 
             current_file_path = os.path.join(RECORDING_DIR, filename)
 
             # 2. 实例化 Logger
-            # 注意：每次 Start 都重新实例化，这样会调用 rr.init() 生成新的 Recording ID
-            # spawn=False 表示不弹窗，只后台录制
-            print("Initializing URDFLogger for recording...")
-            urdf_logger = URDFLogger(URDF_PATH, entity_path_prefix="robot")
-
-            # 3. 开启流式保存
-            urdf_logger.save(current_file_path)
+            # 自动创建并流式写入 DuckDB
+            print(f"Initializing URDFLogger for recording: {current_file_path}")
+            urdf_logger = URDFLogger(URDF_PATH, entity_path_prefix="robot", db_path=current_file_path)
 
             recording_enabled = True
             print(f"Recording started. Stream linked to: {current_file_path}")
@@ -114,8 +111,10 @@ async def record_handler(request):
                 return web.json_response({"error": "Not recording"}, status=400)
 
             recording_enabled = False
-            # 流式写入模式下，停止调用 log 方法即停止录制
-            # 也可以选择在这里 urdf_logger = None 来释放资源，但为了保持最后状态可视，可以保留
+            if urdf_logger:
+                urdf_logger.close()
+                urdf_logger = None
+
             print(f"Recording stopped. Data saved to: {current_file_path}")
 
             return web.json_response(
@@ -203,27 +202,26 @@ async def broadcast_handler(ws):
 
                 # 记录数据
                 if recording_enabled and urdf_logger is not None:
-                    urdf_logger.set_time(current_ts)
-
                     if frame is not None:
-                        urdf_logger.log_image("camera/rgb", frame)
+                        urdf_logger.log_image("camera/rgb", frame, time_seconds=current_ts)
 
                     pointcloud_data = robot.get_point_cloud()
                     if pointcloud_data is not None and len(pointcloud_data) > 0:
+                        colors = np.array([[0, 255, 0]] * len(pointcloud_data), dtype=np.uint8)
                         urdf_logger.log_points(
-                            "pointcloud", pointcloud_data, colors=[0, 255, 0]
+                            "pointcloud", pointcloud_data, colors=colors, time_seconds=current_ts
                         )
 
                     joint_map = {j["name"]: j["angle"] for j in joint_states}
-                    urdf_logger.update_joints(joint_map)
+                    urdf_logger.update_joints(joint_map, time_seconds=current_ts)
 
                     for joint in joint_states:
                         base_path = f"joints/{joint['name']}"
-                        urdf_logger.log_scalar(f"{base_path}/angle", joint["angle"])
+                        urdf_logger.log_scalar(f"{base_path}/angle", joint["angle"], time_seconds=current_ts)
                         urdf_logger.log_scalar(
-                            f"{base_path}/velocity", joint["velocity"]
+                            f"{base_path}/velocity", joint["velocity"], time_seconds=current_ts
                         )
-                        urdf_logger.log_scalar(f"{base_path}/torque", joint["torque"])
+                        urdf_logger.log_scalar(f"{base_path}/torque", joint["torque"], time_seconds=current_ts)
 
                 # Prepare data for sending
                 video_bytes = None
@@ -250,52 +248,9 @@ async def broadcast_handler(ws):
                 }
 
             else:
-                # Replay mode: Get data from replay_manager
-                if replay_manager is None:
-                    await asyncio.sleep(0.1)
-                    continue
-
-                frame_data = replay_manager.get_current_frame()
-                if frame_data is None:
-                    await asyncio.sleep(0.1)
-                    continue
-
-                # Prepare data from recording
-                video_bytes = None
-                if frame_data.get("video") is not None:
-                    _, buffer = cv2.imencode(
-                        ".jpg", frame_data["video"], [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-                    )
-                    video_bytes = buffer.tobytes()
-
-                pc_data = frame_data.get("pointcloud")
-                if pc_data is not None:
-                    pc_data = pc_data.tolist()
-
-                # Convert joint data to standard format
-                joint_states = []
-                joints_data = frame_data.get("joints", {})
-                for joint_name, joint_values in joints_data.items():
-                    joint_states.append(
-                        {
-                            "name": joint_name,
-                            "angle": float(joint_values.get("angle", 0.0)),
-                            "velocity": float(joint_values.get("velocity", 0.0)),
-                            "torque": float(joint_values.get("torque", 0.0)),
-                        }
-                    )
-
-                packed_data = {
-                    "timestamp": frame_data["timestamp"],
-                    "video": video_bytes,
-                    "pointcloud": pc_data,
-                    "joints": joint_states,
-                    "gripper_distance": 0.05,
-                    "mode": "replay",
-                }
-
-                # Auto-advance in replay mode
-                replay_manager.next_frame()
+                # Replay mode: Frontend handles playback with full data
+                await asyncio.sleep(1.0)
+                continue
 
             packed_bytes = msgpack.packb(packed_data, use_bin_type=True)
             header = struct.pack("I", len(packed_bytes))
@@ -392,15 +347,17 @@ async def get_gripper_joints_handler(request):
 
 
 async def get_recordings_handler(request):
-    """获取 recordings 文件夹中的所有录制文件"""
+    """获取 recordings 文件夹中的所有录制文件 (Based on pickle files)"""
     try:
         if not os.path.exists(RECORDING_DIR):
             return web.json_response({"files": []})
 
         files = []
         for filename in os.listdir(RECORDING_DIR):
-            if os.path.isfile(os.path.join(RECORDING_DIR, filename)):
-                files.append(filename)
+            if filename.endswith(".pkl"):
+                # Extract stem: "abc.pkl" -> "abc"
+                stem = filename[:-4]
+                files.append(stem)
 
         return web.json_response({"files": files})
     except Exception as e:
@@ -443,6 +400,10 @@ async def load_replay_handler(request):
             return web.json_response({"error": "Filename is required"}, status=400)
 
         filepath = os.path.join(RECORDING_DIR, filename)
+        
+        # Check if extension is missing and .pkl exists
+        if not os.path.exists(filepath) and os.path.exists(filepath + ".pkl"):
+             filepath += ".pkl"
 
         if not os.path.exists(filepath):
             return web.json_response({"error": "Recording file not found"}, status=404)
@@ -458,46 +419,6 @@ async def load_replay_handler(request):
         )
     except Exception as e:
         print(f"Failed to load replay: {e}")
-        return web.json_response({"error": str(e)}, status=500)
-
-
-async def replay_control_handler(request):
-    """控制回放（播放、暂停、停止、跳转）"""
-    global replay_manager
-
-    try:
-        if replay_manager is None:
-            return web.json_response({"error": "No replay loaded"}, status=400)
-
-        data = await request.json()
-        action = data.get("action")
-
-        if action == "play":
-            replay_manager.is_playing = True
-        elif action == "pause":
-            replay_manager.is_playing = False
-        elif action == "stop":
-            replay_manager.reset()
-            replay_manager.is_playing = False
-        elif action == "seek":
-            frame_idx = data.get("frame_idx")
-            if frame_idx is not None:
-                replay_manager.seek_to_frame(frame_idx)
-        elif action == "seek_time":
-            timestamp = data.get("timestamp")
-            if timestamp is not None:
-                replay_manager.seek_to_time(timestamp)
-
-        return web.json_response(
-            {
-                "status": "success",
-                "current_frame": replay_manager.current_frame_idx,
-                "total_frames": replay_manager.total_frames,
-                "progress": replay_manager.get_progress(),
-                "current_timestamp": replay_manager.get_current_timestamp(),
-            }
-        )
-    except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -521,6 +442,45 @@ async def get_replay_status_handler(request):
             }
         )
     except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def get_replay_trajectory_handler(request):
+    """获取完整的轨迹数据（不含视频/点云）"""
+    global replay_manager
+
+    try:
+        if replay_manager is None:
+            return web.json_response({"error": "No replay loaded"}, status=400)
+
+        trajectory = replay_manager.get_trajectory()
+        return web.json_response({"trajectory": trajectory})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def get_replay_chunk_handler(request):
+    """获取视频/点云数据块 (MessagePack)"""
+    global replay_manager
+    try:
+        if replay_manager is None:
+            return web.json_response({"error": "No replay loaded"}, status=400)
+        
+        # Get query params
+        try:
+            start_idx = int(request.query.get("start_idx", 0))
+            length = int(request.query.get("length", 300)) # Default 10s @ 30fps
+        except ValueError:
+            return web.json_response({"error": "Invalid params"}, status=400)
+
+        chunk_data = replay_manager.get_chunk(start_idx, length)
+        
+        # Pack with MessagePack
+        packed_bytes = msgpack.packb(chunk_data, use_bin_type=True)
+        
+        return web.Response(body=packed_bytes, content_type="application/x-msgpack")
+    except Exception as e:
+        print(f"Chunk error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -559,8 +519,9 @@ app.add_routes(
         web.get("/api/recordings", get_recordings_handler),
         web.post("/api/mode/set", set_mode_handler),
         web.post("/api/replay/load", load_replay_handler),
-        web.post("/api/replay/control", replay_control_handler),
         web.get("/api/replay/status", get_replay_status_handler),
+        web.get("/api/replay/trajectory", get_replay_trajectory_handler),
+        web.get("/api/replay/chunk", get_replay_chunk_handler),
         web.static("/assets", os.path.abspath(STATIC_PATH)),
     ]
 )

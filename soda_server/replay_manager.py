@@ -1,136 +1,129 @@
 #!/usr/bin/env python3
 """
-Replay Manager for RRD files.
+Replay Manager for DuckDB files.
 Handles loading and playback of recorded robot data.
 """
 
-import rerun as rr
-import duckdb
 import numpy as np
-import cv2
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Any
 import time
-
+import cv2
+import base64
+from rrd_reader import DuckDBReader
 
 class ReplayManager:
-    def __init__(self, rrd_path: str):
+    def __init__(self, db_path: str):
         """
-        Initialize the replay manager with an RRD file.
+        Initialize replay manager with a DuckDB file.
 
         Args:
-            rrd_path: Path to the .rrd recording file
+            db_path: Path to .duckdb recording file
         """
-        self.rrd_path = rrd_path
-        self.recording = None
-        self.view = None
-        self.current_frame_idx = 0
+        self.db_path = db_path
+        self.reader = None
         self.frames = []
         self.total_frames = 0
+        self.current_frame_idx = 0
         self.is_playing = False
         self.playback_speed = 1.0
 
         self._load_recording()
 
     def _load_recording(self):
-        """Load the RRD file and extract all frames."""
-        print(f"[ReplayManager] Loading recording from: {self.rrd_path}")
+        print(f"[ReplayManager] Loading recording from: {self.db_path}")
 
         try:
-            self.recording = rr.dataframe.load_recording(self.rrd_path)
-            self.view = self.recording.view(index="timestamp", contents="/**")
+            self.reader = DuckDBReader(self.db_path)
+            
+            # Temporary dict: rounded_timestamp_str -> frame_data
+            # We round to 4 decimal places (0.1ms precision) to group data
+            frames_map: Dict[str, Dict[str, Any]] = {}
 
-            # Query all data and organize by timestamp
-            query = """
-                SELECT 
-                    timestamp,
-                    entity_path,
-                    data
-                FROM view
-                ORDER BY timestamp
-            """
-            df = duckdb.query(query).df()
+            def get_frame(t_val):
+                # Round to ensure matching
+                key = f"{t_val:.4f}"
+                if key not in frames_map:
+                    frames_map[key] = {
+                        "timestamp": t_val,
+                        "video": None,
+                        "pointcloud": None,
+                        "joints": {}
+                    }
+                return frames_map[key]
 
-            if df.empty:
-                raise ValueError("No data found in recording")
+            # 1. Load Images
+            print("[ReplayManager] Loading images...")
+            images = self.reader.get_images("camera/rgb")
+            for item in images:
+                f = get_frame(item["time"])
+                f["video"] = item["image"]
 
-            # Group data by timestamp to create frames
-            self._organize_frames(df)
+            # 2. Load PointClouds
+            print("[ReplayManager] Loading pointclouds...")
+            # 假设 entity name 是 pointcloud
+            # 如果不确定，可以搜索
+            all_entities = self.reader.get_all_entity_paths()
+            pc_entity = next((e for e in all_entities if "pointcloud" in e), "pointcloud")
+            
+            pcs = self.reader.get_points(pc_entity)
+            for item in pcs:
+                f = get_frame(item["time"])
+                f["pointcloud"] = item["positions"]
 
-            print(f"[ReplayManager] Loaded {self.total_frames} frames")
+            # 3. Load Joints
+            print("[ReplayManager] Loading joints...")
+            joint_paths = [p for p in all_entities if "joints/" in p]
+            
+            for path in joint_paths:
+                # expected path: joints/{joint_name}/{property}
+                parts = path.split("/")
+                # find index of 'joints'
+                try:
+                    idx = parts.index("joints")
+                    if idx + 2 >= len(parts): continue
+                    
+                    joint_name = parts[idx+1]
+                    prop_name = parts[idx+2] # angle, velocity, torque
+                except ValueError:
+                    continue
+                
+                df = self.reader.get_scalar(path)
+                if df.empty: continue
+                
+                # Iterate rows
+                # Using itertuples for speed
+                for row in df.itertuples(index=False):
+                    # row: time, value
+                    t = row.time
+                    val = row.value
+                    
+                    f = get_frame(t)
+                    if joint_name not in f["joints"]:
+                        f["joints"][joint_name] = {}
+                    f["joints"][joint_name][prop_name] = float(val)
+
+            # 4. Convert to list and sort
+            print("[ReplayManager] Organizing frames...")
+            # Sort by timestamp
+            sorted_keys = sorted(frames_map.keys())
+            self.frames = [frames_map[k] for k in sorted_keys]
+            self.total_frames = len(self.frames)
+            
+            print(f"[ReplayManager] Loaded {self.total_frames} frames.")
 
         except Exception as e:
             print(f"[ReplayManager] Failed to load recording: {e}")
-            raise
-
-    def _organize_frames(self, df):
-        """Organize data from dataframe into frames."""
-        # Group by unique timestamps
-        grouped = df.groupby("timestamp")
-
-        for timestamp, group in grouped:
-            frame_data = {
-                "timestamp": timestamp,
-                "video": None,
-                "pointcloud": None,
-                "joints": {},
-            }
-
-            # Extract data by entity path
-            for _, row in group.iterrows():
-                entity_path = row["entity_path"]
-                data = row["data"]
-
-                if entity_path.startswith("camera/rgb"):
-                    # Handle video frame
-                    if data is not None and len(data) > 0:
-                        # Rerun stores images as arrays, need to decode
-                        frame_data["video"] = self._decode_image(data)
-
-                elif entity_path.startswith("pointcloud"):
-                    # Handle pointcloud
-                    if data is not None and len(data) > 0:
-                        frame_data["pointcloud"] = data
-
-                elif entity_path.startswith("joints/"):
-                    # Handle joint data - format: joints/{joint_name}/{type}
-                    parts = entity_path.split("/")
-                    if len(parts) >= 3:
-                        joint_name = parts[1]
-                        joint_type = parts[2]  # angle, velocity, or torque
-
-                        if joint_name not in frame_data["joints"]:
-                            frame_data["joints"][joint_name] = {}
-
-                        # Store the joint data by type
-                        frame_data["joints"][joint_name][joint_type] = data
-
-            self.frames.append(frame_data)
-
-        self.total_frames = len(self.frames)
-
-    def _decode_image(self, image_data):
-        """Decode image data from Rerun format."""
-        try:
-            if isinstance(image_data, np.ndarray):
-                # Check if it's already an image or needs decoding
-                if image_data.dtype == np.uint8:
-                    if len(image_data.shape) == 3 and image_data.shape[2] == 3:
-                        # BGR format (OpenCV)
-                        return image_data
-                    elif len(image_data.shape) == 3 and image_data.shape[2] == 4:
-                        # BGRA format
-                        return image_data[:, :, :3]
-                return None
-            return None
-        except Exception as e:
-            print(f"[ReplayManager] Failed to decode image: {e}")
-            return None
+            import traceback
+            traceback.print_exc()
+            # Don't raise, just empty frames
+            self.frames = []
+            self.total_frames = 0
 
     def get_current_frame(self) -> Optional[Dict]:
-        """Get the current frame data."""
+        """Get current frame data."""
+        if self.total_frames == 0: return None
         if self.current_frame_idx >= self.total_frames:
-            return None
-
+            self.current_frame_idx = self.total_frames - 1
         return self.frames[self.current_frame_idx]
 
     def next_frame(self) -> Optional[Dict]:
@@ -156,18 +149,29 @@ class ReplayManager:
 
     def seek_to_time(self, timestamp: float) -> Optional[Dict]:
         """Seek to specific timestamp."""
+        if not self.frames: return None
+        
         # Find closest frame
-        for i, frame in enumerate(self.frames):
-            if frame["timestamp"] >= timestamp:
-                self.current_frame_idx = i
-                return frame
-
-        # Return last frame if timestamp exceeds all
-        if self.frames:
-            self.current_frame_idx = self.total_frames - 1
-            return self.frames[-1]
-
-        return None
+        # Simple linear search or binary search could be better
+        # Given frames are sorted by timestamp
+        
+        # Binary search (bisect_left logic)
+        import bisect
+        timestamps = [f["timestamp"] for f in self.frames]
+        idx = bisect.bisect_left(timestamps, timestamp)
+        
+        if idx >= self.total_frames:
+            idx = self.total_frames - 1
+        
+        # Check if prev is closer
+        if idx > 0:
+            t1 = timestamps[idx]
+            t0 = timestamps[idx-1]
+            if abs(timestamp - t0) < abs(timestamp - t1):
+                idx = idx - 1
+                
+        self.current_frame_idx = idx
+        return self.frames[idx]
 
     def reset(self):
         """Reset to beginning of recording."""
@@ -191,8 +195,58 @@ class ReplayManager:
             return 0.0
         return self.frames[-1]["timestamp"] - self.frames[0]["timestamp"]
 
-    def get_frame_at(self, frame_idx: int) -> Optional[Dict]:
-        """Get frame at specific index without changing current position."""
-        if 0 <= frame_idx < self.total_frames:
-            return self.frames[frame_idx]
-        return None
+    def get_trajectory(self) -> List[Dict]:
+        """
+        Get the lightweight trajectory (joints and timestamps) without heavy data.
+        Returns a list of dicts suitable for client-side playback.
+        """
+        trajectory = []
+        for i, f in enumerate(self.frames):
+            # Convert joint dict to list format expected by frontend
+            joint_states = []
+            if "joints" in f:
+                for joint_name, joint_values in f["joints"].items():
+                    joint_states.append({
+                        "name": joint_name,
+                        "angle": float(joint_values.get("angle", 0.0)),
+                        "velocity": float(joint_values.get("velocity", 0.0)),
+                        "torque": float(joint_values.get("torque", 0.0)),
+                    })
+            
+            trajectory.append({
+                "index": i,
+                "timestamp": f["timestamp"],
+                "joints": joint_states,
+                "gripper_distance": 0.05 # Placeholder or real value if recorded
+            })
+        return trajectory
+
+    def get_chunk(self, start_idx: int, length: int) -> List[Dict]:
+        """
+        Get a chunk of heavy data (video, pointcloud) for a range of frames.
+        Video is returned as JPEG bytes (for MessagePack).
+        """
+        chunk = []
+        end_idx = min(start_idx + length, self.total_frames)
+        
+        for i in range(start_idx, end_idx):
+            f = self.frames[i]
+            
+            # Encode video
+            video_bytes = None
+            if f.get("video") is not None:
+                success, buffer = cv2.imencode('.jpg', f["video"], [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                if success:
+                    video_bytes = buffer.tobytes()
+
+            # Convert pointcloud
+            pc_data = None
+            if f.get("pointcloud") is not None:
+                pc_data = f["pointcloud"].tolist()
+
+            chunk.append({
+                "index": i,
+                "video": video_bytes,
+                "pointcloud": pc_data
+            })
+        return chunk
