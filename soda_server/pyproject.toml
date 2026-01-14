@@ -21,4 +21,5 @@ dependencies = [
     "pandas>=2.3.3",
     "moviepy>=2.2.1",
     "pyarrow>=22.0.0",
+    "asyncio>=4.0.0",
 ]

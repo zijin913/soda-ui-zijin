@@ -5,7 +5,7 @@
 
     <!-- Limit Toast -->
     <div class="limit-toast" :class="{ visible: showLimitToast }">
-      <span>⚠️ Limit Reached</span>
+      <span>{{ limitToastMessage }}</span>
     </div>
   </div>
 </template>
@@ -23,7 +23,7 @@ const props = defineProps({
   mode: { type: String, default: 'realtime' }
 });
 
-const emit = defineEmits(['joint-limits-loaded']);
+const emit = defineEmits(['joint-limit-loaded']);
 
 const JOINT_CONTROL_HZ = 30;
 let jointControlTimer = null;
@@ -31,6 +31,7 @@ let accumulatedDeltaAngle = 0;
 
 const canvasContainer = ref(null);
 const showLimitToast = ref(false); // Toast state
+const limitToastMessage = ref('');
 let limitToastTimer = null;
 
 let scene, camera, renderer, controls, loader;
@@ -46,6 +47,7 @@ let draggingJoint = null;
 let isDragging = false;
 const dragStartPoint = { x: 0, y: 0 };
 let initialJointAngle = 0;
+const currentJointAngles = ref({}); // Store real-time joint angles
 
 // Gripper joints that should not be controlled via dragging
 let gripperJointNames = [];
@@ -56,7 +58,8 @@ watch(() => props.mode, (newMode) => {
 });
 
 // Helper to show toast
-const triggerLimitToast = () => {
+const triggerLimitToast = (message) => {
+  limitToastMessage.value = message;
   showLimitToast.value = true;
   if (limitToastTimer) clearTimeout(limitToastTimer);
   limitToastTimer = setTimeout(() => {
@@ -137,19 +140,21 @@ const initScene = () => {
         const center = box.getCenter(new THREE.Vector3());
         robot.position.sub(center);
 
-        // Extract and emit joint limits
-        const limits = {};
+        // Extract and emit joint limit
+        const limit = {};
         if (robot.joints) {
           for (const [name, joint] of Object.entries(robot.joints)) {
-            if (joint.limits) {
-              limits[name] = {
-                lower: joint.limits.lower,
-                upper: joint.limits.upper
+            console.log(joint)
+            if (joint.limit) {
+              limit[name] = {
+                lower: joint.limit.lower,
+                upper: joint.limit.upper
               };
+              console.log("limit[name]=", limit[name])
             }
           }
         }
-        emit('joint-limits-loaded', limits);
+        emit('joint-limit-loaded', limit);
       });
     } catch (error) {
       console.error('Failed to load URDF:', error);
@@ -226,6 +231,9 @@ const handleJointStateUpdate = (event) => {
   jointStates.forEach(joint => {
     const jointName = joint.name;
     const angle = joint.angle;
+
+    // Update local state map
+    currentJointAngles.value[jointName] = angle;
 
     const jointObj = findJointByName(robotModel, jointName);
     if (jointObj && jointObj.setJointValue) {
@@ -381,7 +389,8 @@ const onPointerDown = (event) => {
         if (!isGripperJoint) {
           draggingJoint = targetJoint;
           isDragging = true;
-          initialJointAngle = draggingJoint.angle || 0;
+          // Use real-time angle from backend
+          initialJointAngle = currentJointAngles.value[draggingJoint.urdfName] || 0;
           accumulatedDeltaAngle = 0;
           controls.enabled = false;
 
@@ -409,27 +418,49 @@ const onWheel = (event) => {
   const degreesPerScroll = 1;
   const angleDelta = (event.deltaY / 100) * degreesPerScroll * (Math.PI / 180);
   
+  console.log('onWheel debug:', {
+    joint: draggingJoint.urdfName,
+    angleDelta,
+    initialJointAngle,
+    limit: draggingJoint.limit
+  });
+  
   // Use current initial angle (which tracks the latest local state)
-  let potentialNewAngle = initialJointAngle - angleDelta;
+  const potentialNewAngle = initialJointAngle - angleDelta;
   let clampedAngle = potentialNewAngle;
 
-  if (draggingJoint.limits) {
-    if (potentialNewAngle < draggingJoint.limits.lower) clampedAngle = draggingJoint.limits.lower;
-    if (potentialNewAngle > draggingJoint.limits.upper) clampedAngle = draggingJoint.limits.upper;
+  if (draggingJoint.limit) {
+    if (potentialNewAngle < draggingJoint.limit.lower) clampedAngle = draggingJoint.limit.lower;
+    if (potentialNewAngle > draggingJoint.limit.upper) clampedAngle = draggingJoint.limit.upper;
   }
 
   // Determine actual change allowed
   const actualChange = clampedAngle - initialJointAngle;
+  
+  console.log('Clamping check:', {
+    potentialNewAngle,
+    clampedAngle,
+    actualChange
+  });
 
   // Check if blocked (trying to move but stuck)
   if (Math.abs(angleDelta) > 1e-6 && Math.abs(actualChange) < 1e-6) {
     // Only trigger if we are actively trying to push past the limit
     // i.e., angleDelta is pushing further in the direction of the limit
-    const isPushingLower = angleDelta > 0 && Math.abs(initialJointAngle - draggingJoint.limits.lower) < 1e-4;
-    const isPushingUpper = angleDelta < 0 && Math.abs(initialJointAngle - draggingJoint.limits.upper) < 1e-4;
+    const isPushingLower = angleDelta > 0 && draggingJoint.limit && Math.abs(initialJointAngle - draggingJoint.limit.lower) < 1e-4;
+    const isPushingUpper = angleDelta < 0 && draggingJoint.limit && Math.abs(initialJointAngle - draggingJoint.limit.upper) < 1e-4;
     
-    if (isPushingLower || isPushingUpper) {
-        triggerLimitToast();
+    console.log('Pushing limit check:', {
+        isPushingLower,
+        isPushingUpper,
+        diffLower: draggingJoint.limit ? Math.abs(initialJointAngle - draggingJoint.limit.lower) : 'N/A',
+        diffUpper: draggingJoint.limit ? Math.abs(initialJointAngle - draggingJoint.limit.upper) : 'N/A'
+    });
+
+    if (isPushingLower) {
+        triggerLimitToast('当前关节已达最小值');
+    } else if (isPushingUpper) {
+        triggerLimitToast('当前关节已达最大值');
     }
   }
 

@@ -339,7 +339,7 @@ const startPlayback = () => {
 
   isPlaying.value = true;
   playbackInterval = setInterval(() => {
-    let nextFrame = replayCurrentFrame.value + 1;
+    const nextFrame = replayCurrentFrame.value + 1;
     if (nextFrame >= replayTotalFrames.value) {
       stopPlayback(); // Stop at end
       return;

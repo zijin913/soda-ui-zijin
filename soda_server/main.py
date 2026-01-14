@@ -91,13 +91,15 @@ async def record_handler(request):
             # 1. 生成文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Base name for parquet files
-            filename = f"rec_{timestamp}" 
+            filename = f"rec_{timestamp}"
             current_file_path = os.path.join(RECORDING_DIR, filename)
 
             # 2. 实例化 Logger
             # 自动创建并流式写入 DuckDB
             print(f"Initializing URDFLogger for recording: {current_file_path}")
-            urdf_logger = URDFLogger(URDF_PATH, entity_path_prefix="robot", db_path=current_file_path)
+            urdf_logger = URDFLogger(
+                URDF_PATH, entity_path_prefix="robot", db_path=current_file_path
+            )
 
             recording_enabled = True
             print(f"Recording started. Stream linked to: {current_file_path}")
@@ -138,9 +140,23 @@ async def handle_joint_command(ws, data):
         robot.joint_names.index(joint_name) if joint_name in robot.joint_names else -1
     )
     if joint_idx >= 0:
+        # Get limits from MuJoCo model
+        model = robot.sim_manager.model
+        min_angle, max_angle = model.jnt_range[joint_idx]
+
         current_state = robot.get_state()
         q = current_state["q"].copy()
-        q[joint_idx] += delta_angle
+
+        # Calculate potential new angle
+        new_angle = q[joint_idx] + delta_angle
+
+        # Clamp to limits
+        if new_angle < min_angle:
+            new_angle = min_angle
+        elif new_angle > max_angle:
+            new_angle = max_angle
+
+        q[joint_idx] = new_angle
         robot.set_command(q)
 
 
@@ -203,25 +219,44 @@ async def broadcast_handler(ws):
                 # 记录数据
                 if recording_enabled and urdf_logger is not None:
                     if frame is not None:
-                        urdf_logger.log_image("camera/rgb", frame, time_seconds=current_ts)
+                        await urdf_logger.log_image_async(
+                            "camera/rgb", frame, time_seconds=current_ts
+                        )
 
                     pointcloud_data = robot.get_point_cloud()
                     if pointcloud_data is not None and len(pointcloud_data) > 0:
-                        colors = np.array([[0, 255, 0]] * len(pointcloud_data), dtype=np.uint8)
-                        urdf_logger.log_points(
-                            "pointcloud", pointcloud_data, colors=colors, time_seconds=current_ts
+                        colors = np.array(
+                            [[0, 255, 0]] * len(pointcloud_data), dtype=np.uint8
+                        )
+                        await urdf_logger.log_points_async(
+                            "pointcloud",
+                            pointcloud_data,
+                            colors=colors,
+                            time_seconds=current_ts,
                         )
 
                     joint_map = {j["name"]: j["angle"] for j in joint_states}
-                    urdf_logger.update_joints(joint_map, time_seconds=current_ts)
+                    await urdf_logger.update_joints_async(
+                        joint_map, time_seconds=current_ts
+                    )
 
                     for joint in joint_states:
                         base_path = f"joints/{joint['name']}"
-                        urdf_logger.log_scalar(f"{base_path}/angle", joint["angle"], time_seconds=current_ts)
-                        urdf_logger.log_scalar(
-                            f"{base_path}/velocity", joint["velocity"], time_seconds=current_ts
+                        await urdf_logger.log_scalar_async(
+                            f"{base_path}/angle",
+                            joint["angle"],
+                            time_seconds=current_ts,
                         )
-                        urdf_logger.log_scalar(f"{base_path}/torque", joint["torque"], time_seconds=current_ts)
+                        await urdf_logger.log_scalar_async(
+                            f"{base_path}/velocity",
+                            joint["velocity"],
+                            time_seconds=current_ts,
+                        )
+                        await urdf_logger.log_scalar_async(
+                            f"{base_path}/torque",
+                            joint["torque"],
+                            time_seconds=current_ts,
+                        )
 
                 # Prepare data for sending
                 video_bytes = None
@@ -400,10 +435,10 @@ async def load_replay_handler(request):
             return web.json_response({"error": "Filename is required"}, status=400)
 
         filepath = os.path.join(RECORDING_DIR, filename)
-        
+
         # Check if extension is missing and .pkl exists
         if not os.path.exists(filepath) and os.path.exists(filepath + ".pkl"):
-             filepath += ".pkl"
+            filepath += ".pkl"
 
         if not os.path.exists(filepath):
             return web.json_response({"error": "Recording file not found"}, status=404)
@@ -465,19 +500,19 @@ async def get_replay_chunk_handler(request):
     try:
         if replay_manager is None:
             return web.json_response({"error": "No replay loaded"}, status=400)
-        
+
         # Get query params
         try:
             start_idx = int(request.query.get("start_idx", 0))
-            length = int(request.query.get("length", 300)) # Default 10s @ 30fps
+            length = int(request.query.get("length", 300))  # Default 10s @ 30fps
         except ValueError:
             return web.json_response({"error": "Invalid params"}, status=400)
 
         chunk_data = replay_manager.get_chunk(start_idx, length)
-        
+
         # Pack with MessagePack
         packed_bytes = msgpack.packb(chunk_data, use_bin_type=True)
-        
+
         return web.Response(body=packed_bytes, content_type="application/x-msgpack")
     except Exception as e:
         print(f"Chunk error: {e}")
