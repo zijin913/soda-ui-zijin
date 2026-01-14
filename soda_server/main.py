@@ -14,7 +14,7 @@ from robot_interface import SimRobot
 from replay_manager import ReplayManager
 
 # 唯一需要的日志依赖
-from soda_server.data_logger import DataLogger
+from data_logger import DataLogger
 
 # 配置
 HOST = "0.0.0.0"

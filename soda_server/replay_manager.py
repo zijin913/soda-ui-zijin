@@ -8,7 +8,7 @@ import numpy as np
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, asdict
 import cv2
-from soda_server.data_reader import DataReader
+from data_reader import DataReader
 
 
 @dataclass
