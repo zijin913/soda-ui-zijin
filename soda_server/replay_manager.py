@@ -8,7 +8,7 @@ import numpy as np
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, asdict
 import cv2
-from rrd_reader import PandasReader
+from soda_server.data_reader import DataReader
 
 
 @dataclass
@@ -58,7 +58,7 @@ class ReplayManager:
         print(f"[ReplayManager] Loading recording from: {self.db_path}")
 
         try:
-            self.reader = PandasReader(self.db_path)
+            self.reader = DataReader(self.db_path)
             df = self.reader.df
             joint_names = self.reader.get_joint_names()
 
@@ -67,11 +67,7 @@ class ReplayManager:
             timestamps = df["timestamp"].values
 
             has_pc = "observation.pointcloud.positions" in df.columns
-            pc_col = (
-                df["observation.pointcloud.positions"].values
-                if has_pc
-                else [None] * len(df)
-            )
+            pc_col = df["observation.pointcloud.positions"].values if has_pc else [None] * len(df)
 
             self.frames = []
             for i in range(len(df)):
@@ -229,9 +225,7 @@ class ReplayManager:
                     img_np = (img_np * 255).astype(np.uint8)
                 img_bgr = img_np[..., ::-1]
 
-                success, buffer = cv2.imencode(
-                    ".jpg", img_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-                )
+                success, buffer = cv2.imencode(".jpg", img_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
                 if success:
                     video_bytes = buffer.tobytes()
             except Exception as e:

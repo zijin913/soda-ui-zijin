@@ -14,7 +14,7 @@ from robot_interface import SimRobot
 from replay_manager import ReplayManager
 
 # 唯一需要的日志依赖
-from urdf_logger import URDFLogger
+from soda_server.data_logger import DataLogger
 
 # 配置
 HOST = "0.0.0.0"
@@ -110,7 +110,7 @@ async def record_handler(request):
                 if rgb is not None:
                     img_shape = rgb.shape[:2]  # (H, W)
 
-            urdf_logger = URDFLogger(
+            urdf_logger = DataLogger(
                 URDF_PATH,
                 entity_path_prefix="robot",
                 db_path=current_file_path,
@@ -121,9 +121,7 @@ async def record_handler(request):
             recording_enabled = True
             print(f"Recording started. Stream linked to: {current_file_path}")
 
-            return web.json_response(
-                {"status": "recording_started", "file": current_file_path}
-            )
+            return web.json_response({"status": "recording_started", "file": current_file_path})
 
         elif action == "stop":
             if not recording_enabled:
@@ -136,9 +134,7 @@ async def record_handler(request):
 
             print(f"Recording stopped. Data saved to: {current_file_path}")
 
-            return web.json_response(
-                {"status": "recording_stopped", "saved_to": current_file_path}
-            )
+            return web.json_response({"status": "recording_stopped", "saved_to": current_file_path})
 
         else:
             return web.json_response({"error": "Invalid action"}, status=400)
@@ -153,9 +149,7 @@ async def handle_joint_command(ws, data):
 
     joint_name = data.get("joint_name")
     delta_angle = data.get("delta_angle", 0)
-    joint_idx = (
-        robot.joint_names.index(joint_name) if joint_name in robot.joint_names else -1
-    )
+    joint_idx = robot.joint_names.index(joint_name) if joint_name in robot.joint_names else -1
     if joint_idx >= 0:
         # Get limits from MuJoCo model
         model = robot.sim_manager.model
@@ -236,15 +230,11 @@ async def broadcast_handler(ws):
                 # 记录数据
                 if recording_enabled and urdf_logger is not None:
                     if frame is not None:
-                        await urdf_logger.log_image_async(
-                            "camera/rgb", frame, time_seconds=current_ts
-                        )
+                        await urdf_logger.log_image_async("camera/rgb", frame, time_seconds=current_ts)
 
                     pointcloud_data = robot.get_point_cloud()
                     if pointcloud_data is not None and len(pointcloud_data) > 0:
-                        colors = np.array(
-                            [[0, 255, 0]] * len(pointcloud_data), dtype=np.uint8
-                        )
+                        colors = np.array([[0, 255, 0]] * len(pointcloud_data), dtype=np.uint8)
                         await urdf_logger.log_points_async(
                             "pointcloud",
                             pointcloud_data,
@@ -253,9 +243,7 @@ async def broadcast_handler(ws):
                         )
 
                     joint_map = {j["name"]: j["angle"] for j in joint_states}
-                    await urdf_logger.update_joints_async(
-                        joint_map, time_seconds=current_ts
-                    )
+                    await urdf_logger.update_joints_async(joint_map, time_seconds=current_ts)
 
                     for joint in joint_states:
                         base_path = f"joints/{joint['name']}"
@@ -280,9 +268,7 @@ async def broadcast_handler(ws):
                 # Prepare data for sending
                 video_bytes = None
                 if frame is not None:
-                    _, buffer = cv2.imencode(
-                        ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-                    )
+                    _, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
                     video_bytes = buffer.tobytes()
 
                 pointcloud_data = robot.get_point_cloud()
@@ -352,9 +338,7 @@ async def joint_command_handler(request):
 
 
 async def get_urdf_handler(request):
-    return web.json_response(
-        {"url": f"http://localhost:{PORT}/assets/l6y_gp100/l6y_gp100.urdf"}
-    )
+    return web.json_response({"url": f"http://localhost:{PORT}/assets/l6y_gp100/l6y_gp100.urdf"})
 
 
 async def gripper_handler(request):
@@ -428,9 +412,7 @@ async def set_mode_handler(request):
         new_mode = data.get("mode")
 
         if new_mode not in ["realtime", "replay"]:
-            return web.json_response(
-                {"error": "Invalid mode. Use 'realtime' or 'replay'"}, status=400
-            )
+            return web.json_response({"error": "Invalid mode. Use 'realtime' or 'replay'"}, status=400)
 
         current_mode = new_mode
 
@@ -457,9 +439,7 @@ async def load_replay_handler(request):
         filepath = os.path.join(RECORDING_DIR, filename)
 
         if not os.path.exists(filepath):
-            return web.json_response(
-                {"error": "Recording directory not found"}, status=404
-            )
+            return web.json_response({"error": "Recording directory not found"}, status=404)
 
         replay_manager = ReplayManager(filepath)
 

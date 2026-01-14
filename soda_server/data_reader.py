@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 
-class PandasReader:
+class DataReader:
     def __init__(self, db_path: str):
         """
         Initialize reader using LeRobotDataset.
@@ -27,17 +27,15 @@ class PandasReader:
             # If it's a file, try the parent
             self.root = self.root.parent
 
-        print(f"[PandasReader] Loading LeRobotDataset from: {self.root}")
+        print(f"[DataReader] Loading LeRobotDataset from: {self.root}")
 
         # Load dataset
         # repo_id is not strictly needed for local loading if root is provided
-        self.dataset = LeRobotDataset(
-            repo_id="local/dataset", root=self.root, tolerance_s=0.1
-        )
+        self.dataset = LeRobotDataset(repo_id="local/dataset", root=self.root, tolerance_s=0.1)
 
         # Access hf_dataset for easy filtering
         self.df = self.dataset.hf_dataset.to_pandas()
-        print(f"[PandasReader] Loaded {len(self.df)} frames.")
+        print(f"[DataReader] Loaded {len(self.df)} frames.")
 
     def get_all_entity_paths(self) -> List[str]:
         """
@@ -121,11 +119,7 @@ class PandasReader:
         points = []
         timestamps = self.df["timestamp"].values
         pos_data = self.df[pos_col].values
-        col_data = (
-            self.df[col_col].values
-            if col_col in self.df.columns
-            else [None] * len(self.df)
-        )
+        col_data = self.df[col_col].values if col_col in self.df.columns else [None] * len(self.df)
 
         for ts, pos, col in zip(timestamps, pos_data, col_data):
             if pos is None:
@@ -146,7 +140,7 @@ if __name__ == "__main__":
     if not os.path.exists(db_dir):
         print(f"Dataset {db_dir} not found.")
     else:
-        reader = PandasReader(db_dir)
+        reader = DataReader(db_dir)
         print("Entities:", reader.get_all_entity_paths())
         imgs = reader.get_images("camera/rgb")
         print(f"Images found: {len(imgs)}")

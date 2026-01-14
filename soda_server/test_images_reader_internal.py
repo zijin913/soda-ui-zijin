@@ -2,7 +2,7 @@ import sys
 import os
 
 # sys.path.append("soda_server") # removed, assuming running from soda_server
-from rrd_reader import PandasReader
+from soda_server.data_reader import PandasReader
 
 
 def test_images():

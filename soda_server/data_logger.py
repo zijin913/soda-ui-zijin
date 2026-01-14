@@ -19,7 +19,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from urdf_parser_py import urdf as urdf_parser
 
 
-class URDFLogger:
+class DataLogger:
     def __init__(
         self,
         filepath: str,
@@ -83,7 +83,7 @@ class URDFLogger:
         )
 
         self.current_frame = self._reset_frame()
-        print(f"[URDFLogger] Initialized LeRobotDataset at {self.root} with {self.num_points} points")
+        print(f"[DataLogger] Initialized LeRobotDataset at {self.root} with {self.num_points} points")
 
     def _reset_frame(self):
         return {
@@ -168,7 +168,7 @@ class URDFLogger:
         """Finalize the dataset."""
         self.dataset.save_episode()
         self.dataset.finalize()
-        print(f"[URDFLogger] Dataset finalized at {self.root}")
+        print(f"[DataLogger] Dataset finalized at {self.root}")
 
     # Async helpers for compatibility with main.py calls
     async def update_joints_async(self, joint_positions, time_seconds=None):
@@ -190,7 +190,7 @@ def main():
         print("URDF file not found.")
         return
 
-    logger = URDFLogger(urdf_file, db_path="test_lerobot_official", num_points=100, truncate=True)
+    logger = DataLogger(urdf_file, db_path="test_lerobot_official", num_points=100, truncate=True)
 
     print("Logging 10 frames...")
     for i in range(10):
