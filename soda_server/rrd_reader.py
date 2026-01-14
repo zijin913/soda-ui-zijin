@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import os
 from pathlib import Path
 
+
 class PandasReader:
     def __init__(self, db_path: str):
         """
@@ -19,12 +20,12 @@ class PandasReader:
         path_obj = Path(db_path)
         if path_obj.suffix != ".pkl":
             path_obj = path_obj.with_suffix(".pkl")
-            
+
         self.db_path = str(path_obj)
         self.db_dir = str(path_obj.parent)
-        
+
         print(f"[PandasReader] Loading recording from: {self.db_path}")
-        
+
         self.df = pd.DataFrame()
         if os.path.exists(self.db_path):
             try:
@@ -33,28 +34,31 @@ class PandasReader:
             except Exception as e:
                 print(f"[PandasReader] Failed to load pickle: {e}")
         else:
-             print(f"[PandasReader] File {self.db_path} does not exist.")
+            print(f"[PandasReader] File {self.db_path} does not exist.")
 
     def get_all_entity_paths(self) -> List[str]:
-        if self.df.empty: return []
+        if self.df.empty:
+            return []
         return sorted(self.df["entity_path"].unique())
 
     def get_joint_trajectory(self, entity_path: str, timeline: str = "sim_time") -> pd.DataFrame:
-        if self.df.empty: return pd.DataFrame()
-        
+        if self.df.empty:
+            return pd.DataFrame()
+
         # Filter by entity_path and type='transform'
         mask = (self.df["entity_path"] == entity_path) & (self.df["type"] == "transform")
         df = self.df[mask].copy()
-        
-        if df.empty: return pd.DataFrame()
-        
+
+        if df.empty:
+            return pd.DataFrame()
+
         # Rename tx to x if needed (for compatibility with previous API)
         # Previous logger wrote: tx, ty, tz
         # This one writes: tx, ty, tz
         # API expects: x, y, z
         if "tx" in df.columns:
             df = df.rename(columns={"tx": "x", "ty": "y", "tz": "z"})
-            
+
         # Select relevant columns + time
         cols = ["time", "x", "y", "z", "qx", "qy", "qz", "qw"]
         # Ensure cols exist
@@ -62,13 +66,15 @@ class PandasReader:
         return df[available_cols].sort_values("time")
 
     def get_images(self, entity_path: str, timeline: str = "sim_time") -> List[Dict]:
-        if self.df.empty: return []
-        
+        if self.df.empty:
+            return []
+
         mask = (self.df["entity_path"] == entity_path) & (self.df["type"] == "image")
         df = self.df[mask].sort_values("time")
-        
-        if df.empty: return []
-        
+
+        if df.empty:
+            return []
+
         images = []
         try:
             import cv2
@@ -77,65 +83,68 @@ class PandasReader:
             return []
 
         caps = {}
-        
+
         for row in df.itertuples():
             # row has attributes corresponding to columns
             # video_path, frame_idx might be NaN for other types, but valid here
             if not hasattr(row, "video_path") or not isinstance(row.video_path, str):
                 continue
-                
+
             video_path = row.video_path
             # frame_idx might be float in a sparse dataframe (NaNs elsewhere convert int col to float)
             try:
                 frame_idx = int(row.frame_idx)
             except (ValueError, TypeError):
                 continue
-            
+
             # Resolve path relative to db_dir
             abs_video_path = os.path.join(self.db_dir, video_path)
-            
+
             if abs_video_path not in caps:
                 if os.path.exists(abs_video_path):
                     caps[abs_video_path] = cv2.VideoCapture(abs_video_path)
                 else:
                     caps[abs_video_path] = None
-            
+
             cap = caps[abs_video_path]
             if cap and cap.isOpened():
                 current_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
                 if current_pos != frame_idx:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                
+
                 ret, frame = cap.read()
                 if ret:
                     images.append({"time": row.time, "image": frame})
-        
+
         for cap in caps.values():
-            if cap: cap.release()
-            
+            if cap:
+                cap.release()
+
         return images
 
     def get_scalar(self, entity_path: str, timeline: str = "sim_time") -> pd.DataFrame:
-        if self.df.empty: return pd.DataFrame()
-        
+        if self.df.empty:
+            return pd.DataFrame()
+
         mask = (self.df["entity_path"] == entity_path) & (self.df["type"] == "scalar")
         df = self.df[mask].copy()
-        
+
         cols = ["time", "value"]
         available_cols = [c for c in cols if c in df.columns]
         return df[available_cols].sort_values("time")
 
     def get_points(self, entity_path: str) -> List[Dict]:
-        if self.df.empty: return []
-        
+        if self.df.empty:
+            return []
+
         mask = (self.df["entity_path"] == entity_path) & (self.df["type"] == "point")
         df = self.df[mask].sort_values("time")
-        
+
         points = []
         for row in df.itertuples():
             if not hasattr(row, "positions") or not isinstance(row.positions, bytes):
                 continue
-            
+
             try:
                 positions = np.frombuffer(row.positions, dtype=np.float32).reshape(-1, 3)
                 colors = None
@@ -146,23 +155,20 @@ class PandasReader:
                 pass
         return points
 
-# Alias
-# Previous code used DuckDBReader name, alias it to PandasReader to minimize changes in main.py
-DuckDBReader = PandasReader
 
 # ==========================================
 # Test
 # ==========================================
 if __name__ == "__main__":
-    db_file = "test_recording_pandas" # Matches the one created by urdf_logger test
-    
+    db_file = "test_recording_pandas"  # Matches the one created by urdf_logger test
+
     # Check if pkl file exists
     if not os.path.exists(db_file + ".pkl"):
         print(f"Recording {db_file}.pkl not found. Run urdf_logger.py first.")
     else:
         reader = PandasReader(db_file)
         print("Entities:", reader.get_all_entity_paths())
-        
+
         imgs = reader.get_images("camera/front")
         print(f"Images found: {len(imgs)}")
         if imgs:
