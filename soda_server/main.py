@@ -95,10 +95,27 @@ async def record_handler(request):
             current_file_path = os.path.join(RECORDING_DIR, filename)
 
             # 2. 实例化 Logger
-            # 自动创建并流式写入 DuckDB
+            # 自动创建并流式写入 LeRobot 格式
             print(f"Initializing URDFLogger for recording: {current_file_path}")
+
+            # Determine num_points and img_shape from robot if available
+            num_points = 1024
+            img_shape = (480, 640)
+            if robot:
+                pc = robot.get_point_cloud()
+                if pc is not None:
+                    num_points = len(pc)
+
+                rgb = robot.get_rgb()
+                if rgb is not None:
+                    img_shape = rgb.shape[:2]  # (H, W)
+
             urdf_logger = URDFLogger(
-                URDF_PATH, entity_path_prefix="robot", db_path=current_file_path
+                URDF_PATH,
+                entity_path_prefix="robot",
+                db_path=current_file_path,
+                num_points=num_points,
+                img_shape=img_shape,
             )
 
             recording_enabled = True
@@ -258,6 +275,8 @@ async def broadcast_handler(ws):
                             time_seconds=current_ts,
                         )
 
+                    await urdf_logger.commit_frame()
+
                 # Prepare data for sending
                 video_bytes = None
                 if frame is not None:
@@ -382,17 +401,18 @@ async def get_gripper_joints_handler(request):
 
 
 async def get_recordings_handler(request):
-    """获取 recordings 文件夹中的所有录制文件 (Based on pickle files)"""
+    """获取 recordings 文件夹中的所有录制文件 (Based on LeRobot format directories)"""
     try:
         if not os.path.exists(RECORDING_DIR):
             return web.json_response({"files": []})
 
         files = []
         for filename in os.listdir(RECORDING_DIR):
-            if filename.endswith(".pkl"):
-                # Extract stem: "abc.pkl" -> "abc"
-                stem = filename[:-4]
-                files.append(stem)
+            dir_path = os.path.join(RECORDING_DIR, filename)
+            if os.path.isdir(dir_path):
+                # Check if it's a LeRobot dataset (has meta/info.json)
+                if os.path.exists(os.path.join(dir_path, "meta", "info.json")):
+                    files.append(filename)
 
         return web.json_response({"files": files})
     except Exception as e:
@@ -436,12 +456,10 @@ async def load_replay_handler(request):
 
         filepath = os.path.join(RECORDING_DIR, filename)
 
-        # Check if extension is missing and .pkl exists
-        if not os.path.exists(filepath) and os.path.exists(filepath + ".pkl"):
-            filepath += ".pkl"
-
         if not os.path.exists(filepath):
-            return web.json_response({"error": "Recording file not found"}, status=404)
+            return web.json_response(
+                {"error": "Recording directory not found"}, status=404
+            )
 
         replay_manager = ReplayManager(filepath)
 
@@ -488,8 +506,8 @@ async def get_replay_trajectory_handler(request):
         if replay_manager is None:
             return web.json_response({"error": "No replay loaded"}, status=400)
 
-        trajectory = replay_manager.get_trajectory()
-        return web.json_response({"trajectory": trajectory})
+        trajectory_resp = replay_manager.get_trajectory()
+        return web.json_response(trajectory_resp.to_dict())
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 

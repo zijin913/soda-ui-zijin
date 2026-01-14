@@ -22,4 +22,5 @@ dependencies = [
     "moviepy>=2.2.1",
     "pyarrow>=22.0.0",
     "asyncio>=4.0.0",
+    "lerobot>=0.4.2",
 ]

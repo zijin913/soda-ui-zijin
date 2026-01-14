@@ -1,24 +1,48 @@
 #!/usr/bin/env python3
 """
-Replay Manager for DuckDB files.
+Replay Manager for LeRobot datasets.
 Handles loading and playback of recorded robot data.
 """
 
 import numpy as np
 from typing import Optional, Dict, List, Any
-import time
+from dataclasses import dataclass, asdict
 import cv2
-import base64
 from rrd_reader import PandasReader
+
+
+@dataclass
+class JointState:
+    id: int
+    name: str
+    angle: float
+    velocity: float = 0.0
+    torque: float = 0.0
+
+
+@dataclass
+class TrajectoryPoint:
+    index: int
+    timestamp: float
+    joints: List[JointState]
+    gripper_distance: float = 0.05
+
+
+@dataclass
+class TrajectoryResponse:
+    trajectory: List[TrajectoryPoint]
+
+    def to_dict(self):
+        return {"trajectory": [asdict(p) for p in self.trajectory]}
 
 
 class ReplayManager:
     def __init__(self, db_path: str):
         """
-        Initialize replay manager with a DuckDB file.
+        Initialize replay manager with a dataset directory.
 
         Args:
-            db_path: Path to .duckdb recording file
+            db_path: Path to LeRobot dataset directory
         """
         self.db_path = db_path
         self.reader = None
@@ -35,78 +59,41 @@ class ReplayManager:
 
         try:
             self.reader = PandasReader(self.db_path)
+            df = self.reader.df
+            joint_names = self.reader.get_joint_names()
 
-            # Temporary dict: rounded_timestamp_str -> frame_data
-            # We round to 4 decimal places (0.1ms precision) to group data
-            frames_map: Dict[str, Dict[str, Any]] = {}
+            # Extract data column-wise to avoid iterrows() which can fail with extension dtypes
+            state_data = np.stack(df["observation.state"].values)
+            timestamps = df["timestamp"].values
 
-            def get_frame(t_val):
-                # Round to ensure matching
-                key = f"{t_val:.4f}"
-                if key not in frames_map:
-                    frames_map[key] = {"timestamp": t_val, "video": None, "pointcloud": None, "joints": {}}
-                return frames_map[key]
+            has_pc = "observation.pointcloud.positions" in df.columns
+            pc_col = (
+                df["observation.pointcloud.positions"].values
+                if has_pc
+                else [None] * len(df)
+            )
 
-            # 1. Load Images
-            print("[ReplayManager] Loading images...")
-            images = self.reader.get_images("camera/rgb")
-            for item in images:
-                f = get_frame(item["time"])
-                f["video"] = item["image"]
+            self.frames = []
+            for i in range(len(df)):
+                # Group joints for internal storage
+                joints = {}
+                for j_idx, name in enumerate(joint_names):
+                    joints[name] = {"angle": float(state_data[i, j_idx])}
 
-            # 2. Load PointClouds
-            print("[ReplayManager] Loading pointclouds...")
-            # 假设 entity name 是 pointcloud
-            # 如果不确定，可以搜索
-            all_entities = self.reader.get_all_entity_paths()
-            pc_entity = next((e for e in all_entities if "pointcloud" in e), "pointcloud")
+                frame = {
+                    "index": i,
+                    "timestamp": float(timestamps[i]),
+                    "joints": joints,
+                    "video": None,
+                    "pointcloud": None,
+                }
 
-            pcs = self.reader.get_points(pc_entity)
-            for item in pcs:
-                f = get_frame(item["time"])
-                f["pointcloud"] = item["positions"]
+                if has_pc and pc_col[i] is not None:
+                    frame["pointcloud"] = np.array(pc_col[i]).reshape(-1, 3)
 
-            # 3. Load Joints
-            print("[ReplayManager] Loading joints...")
-            joint_paths = [p for p in all_entities if "joints/" in p]
+                self.frames.append(frame)
 
-            for path in joint_paths:
-                # expected path: joints/{joint_name}/{property}
-                parts = path.split("/")
-                # find index of 'joints'
-                try:
-                    idx = parts.index("joints")
-                    if idx + 2 >= len(parts):
-                        continue
-
-                    joint_name = parts[idx + 1]
-                    prop_name = parts[idx + 2]  # angle, velocity, torque
-                except ValueError:
-                    continue
-
-                df = self.reader.get_scalar(path)
-                if df.empty:
-                    continue
-
-                # Iterate rows
-                # Using itertuples for speed
-                for row in df.itertuples(index=False):
-                    # row: time, value
-                    t = row.time
-                    val = row.value
-
-                    f = get_frame(t)
-                    if joint_name not in f["joints"]:
-                        f["joints"][joint_name] = {}
-                    f["joints"][joint_name][prop_name] = float(val)
-
-            # 4. Convert to list and sort
-            print("[ReplayManager] Organizing frames...")
-            # Sort by timestamp
-            sorted_keys = sorted(frames_map.keys())
-            self.frames = [frames_map[k] for k in sorted_keys]
             self.total_frames = len(self.frames)
-
             print(f"[ReplayManager] Loaded {self.total_frames} frames.")
 
         except Exception as e:
@@ -114,7 +101,6 @@ class ReplayManager:
             import traceback
 
             traceback.print_exc()
-            # Don't raise, just empty frames
             self.frames = []
             self.total_frames = 0
 
@@ -152,11 +138,6 @@ class ReplayManager:
         if not self.frames:
             return None
 
-        # Find closest frame
-        # Simple linear search or binary search could be better
-        # Given frames are sorted by timestamp
-
-        # Binary search (bisect_left logic)
         import bisect
 
         timestamps = [f["timestamp"] for f in self.frames]
@@ -164,8 +145,6 @@ class ReplayManager:
 
         if idx >= self.total_frames:
             idx = self.total_frames - 1
-
-        # Check if prev is closer
         if idx > 0:
             t1 = timestamps[idx]
             t0 = timestamps[idx - 1]
@@ -197,58 +176,69 @@ class ReplayManager:
             return 0.0
         return self.frames[-1]["timestamp"] - self.frames[0]["timestamp"]
 
-    def get_trajectory(self) -> List[Dict]:
-        """
-        Get the lightweight trajectory (joints and timestamps) without heavy data.
-        Returns a list of dicts suitable for client-side playback.
-        """
-        trajectory = []
-        for i, f in enumerate(self.frames):
-            # Convert joint dict to list format expected by frontend
-            joint_states = []
-            if "joints" in f:
-                for joint_name, joint_values in f["joints"].items():
-                    joint_states.append(
-                        {
-                            "name": joint_name,
-                            "angle": float(joint_values.get("angle", 0.0)),
-                            "velocity": float(joint_values.get("velocity", 0.0)),
-                            "torque": float(joint_values.get("torque", 0.0)),
-                        }
-                    )
+    def get_trajectory(self) -> TrajectoryResponse:
+        trajectory_points = []
+        joint_names = self.reader.get_joint_names()
 
-            trajectory.append(
-                {
-                    "index": i,
-                    "timestamp": f["timestamp"],
-                    "joints": joint_states,
-                    "gripper_distance": 0.05,  # Placeholder or real value if recorded
-                }
+        for f in self.frames:
+            joint_states = [
+                JointState(
+                    id=i,
+                    name=name,
+                    angle=float(f["joints"].get(name, {}).get("angle", 0.0)),
+                    velocity=float(f["joints"].get(name, {}).get("velocity", 0.0)),
+                    torque=float(f["joints"].get(name, {}).get("torque", 0.0)),
+                )
+                for i, name in enumerate(joint_names)
+            ]
+
+            trajectory_points.append(
+                TrajectoryPoint(
+                    index=f["index"],
+                    timestamp=f["timestamp"],
+                    joints=joint_states,
+                    gripper_distance=0.05,
+                )
             )
-        return trajectory
+        return TrajectoryResponse(trajectory=trajectory_points)
 
     def get_chunk(self, start_idx: int, length: int) -> List[Dict]:
         """
         Get a chunk of heavy data (video, pointcloud) for a range of frames.
-        Video is returned as JPEG bytes (for MessagePack).
         """
         chunk = []
         end_idx = min(start_idx + length, self.total_frames)
 
+        # Pre-fetch images if needed. LeRobotDataset decodes on index.
+        # We'll use the reader to get images for the range.
+        # This is more efficient than loading all images in _load_recording.
+
+        # Note: This is a simplified version. Ideally we'd only decode what's requested.
         for i in range(start_idx, end_idx):
             f = self.frames[i]
 
-            # Encode video
+            # Extract video frame for this index
             video_bytes = None
-            if f.get("video") is not None:
-                success, buffer = cv2.imencode(".jpg", f["video"], [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            try:
+                # We can add a method to reader to get a single image to avoid overhead
+                # For now, let's assume we might need to optimize this.
+                item = self.reader.dataset[i]
+                img_tensor = item["observation.images.camera_rgb"]
+                img_np = img_tensor.permute(1, 2, 0).numpy()
+                if img_np.dtype == np.float32:
+                    img_np = (img_np * 255).astype(np.uint8)
+                img_bgr = img_np[..., ::-1]
+
+                success, buffer = cv2.imencode(
+                    ".jpg", img_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                )
                 if success:
                     video_bytes = buffer.tobytes()
+            except Exception as e:
+                # Image might not exist or decode failed
+                pass
 
-            # Convert pointcloud
-            pc_data = None
-            if f.get("pointcloud") is not None:
-                pc_data = f["pointcloud"].tolist()
+            pc_data = f["pointcloud"].tolist() if f["pointcloud"] is not None else None
 
             chunk.append({"index": i, "video": video_bytes, "pointcloud": pc_data})
         return chunk
