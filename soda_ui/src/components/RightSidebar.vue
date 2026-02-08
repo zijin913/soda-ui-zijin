@@ -28,6 +28,23 @@
        </div>
     </div>
 
+    <!-- Pose Move 模块 -->
+    <div class="panel-block pose-block">
+      <div class="panel-header">
+        <span>Pose Move</span>
+      </div>
+      <div class="pose-controls">
+        <button
+          class="pose-btn"
+          :disabled="poseMoveBusy"
+          @click="movePoseUpBy2cm"
+        >
+          {{ poseMoveBusy ? 'Moving...' : 'Move +Z 2cm' }}
+        </button>
+        <div class="pose-status">{{ poseMoveStatus }}</div>
+      </div>
+    </div>
+
     <!-- Velocity / Charts 模块 -->
     <div class="panel-block velocity-block">
       <!-- Switch Bar -->
@@ -124,6 +141,60 @@ const currentIndicatorLeft = computed(() => {
 
 const activeTab = ref('Angle');
 const VIEW_WINDOW = 500; // Frames to show in window
+const poseMoveBusy = ref(false);
+const poseMoveStatus = ref('Ready');
+
+const movePoseUpBy2cm = async () => {
+  if (poseMoveBusy.value) return;
+  poseMoveBusy.value = true;
+  poseMoveStatus.value = 'Requesting state...';
+
+  try {
+    const stateResp = await fetch('http://localhost:8080/robot/state');
+    if (!stateResp.ok) {
+      throw new Error(`state request failed: ${stateResp.status}`);
+    }
+    const state = await stateResp.json();
+    const eePos = state.ee_position;
+    const eeRot = state.ee_rotation;
+    if (!Array.isArray(eePos) || eePos.length !== 3 || !Array.isArray(eeRot) || eeRot.length !== 3) {
+      throw new Error('invalid robot state payload');
+    }
+
+    poseMoveStatus.value = 'Sending move...';
+    const target = {
+      x: Number(eePos[0]),
+      y: Number(eePos[1]),
+      z: Number(eePos[2]) + 0.02,
+      orientation: [
+        Number(eeRot[0][0]), Number(eeRot[0][1]), Number(eeRot[0][2]),
+        Number(eeRot[1][0]), Number(eeRot[1][1]), Number(eeRot[1][2]),
+        Number(eeRot[2][0]), Number(eeRot[2][1]), Number(eeRot[2][2]),
+      ],
+      duration: 2.5,
+      method: 'auto',
+      allow_approximate_ik: true,
+      approximate_pos_tol_m: 0.006,
+      approximate_rot_tol_deg: 1.0,
+    };
+
+    const moveResp = await fetch('http://localhost:8080/robot/move/pose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(target),
+    });
+    const moveData = await moveResp.json().catch(() => ({}));
+    if (!moveResp.ok || !moveData.success) {
+      const msg = moveData?.message || `move failed: ${moveResp.status}`;
+      throw new Error(msg);
+    }
+    poseMoveStatus.value = 'Done';
+  } catch (err) {
+    poseMoveStatus.value = `Error: ${err.message || err}`;
+  } finally {
+    poseMoveBusy.value = false;
+  }
+};
 
 const sortedJointIds = computed(() => {
   const source = props.mode === 'replay' ? props.fullData : props.historyData;
@@ -283,6 +354,39 @@ const generatePath = (jointIndex) => {
   font-weight: 600;
   font-size: 18px;
   color: white;
+}
+
+.pose-block {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.pose-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pose-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f1115;
+  background: #63e6be;
+  cursor: pointer;
+}
+
+.pose-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.pose-status {
+  min-height: 18px;
+  font-size: 12px;
+  color: #b8c0cc;
 }
 
 .gripper-block {
