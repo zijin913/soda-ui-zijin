@@ -26,6 +26,7 @@
         <template v-if="dualMode">
           <CameraPanel :imageUrl="cameraRgbUrls.left" label="Left Camera" position="top" />
           <CameraPanel :imageUrl="cameraRgbUrls.right" label="Right Camera" position="bottom" />
+          <CameraPanel :imageUrl="cameraRgbUrls.side" label="Side Camera" position="right" />
         </template>
         <CameraPanel v-else :imageUrl="cameraRgbUrl" />
 
@@ -82,7 +83,7 @@ const gripperDistance = ref(0);
 
 // Dual-arm state
 const dualMode = ref(false);
-const cameraRgbUrls = ref({ left: null, right: null });
+const cameraRgbUrls = ref({ left: null, right: null, side: null });
 
 // Replay state
 const replayCurrentFrame = ref(0);
@@ -202,6 +203,13 @@ const handleMessagepackData = (arrayBuffer) => {
         if (typeof armData.gripper_distance === 'number' && side === 'left') {
           gripperDistance.value = armData.gripper_distance * 1000;
         }
+      }
+      // Side camera (sent separately, not per-arm)
+      if (data.side_video) {
+        const blob = new Blob([data.side_video], { type: 'image/jpeg' });
+        const newUrl = URL.createObjectURL(blob);
+        if (cameraRgbUrls.value.side) URL.revokeObjectURL(cameraRgbUrls.value.side);
+        cameraRgbUrls.value.side = newUrl;
       }
     } else {
       // ── Single-arm protocol (unchanged) ──

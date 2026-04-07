@@ -44,7 +44,8 @@ defineProps({
 
 .camera-panel {
   position: absolute;
-  left: 1.5rem;
+  left: v-bind("position === 'right' ? 'auto' : '1.5rem'");
+  right: v-bind("position === 'right' ? '320px' : 'auto'");
   top: v-bind("position === 'bottom' ? '290px' : '1rem'");
   width: 371px;
   height: 272px;
