@@ -14,15 +14,20 @@
       <!-- 2. Main Viewport -->
       <main class="main-viewport">
         <!-- 3D Component -->
-          <RobotViewport 
-            :pointCloudData="pointCloudData" 
-            :showPointCloud="showPointCloud" 
+          <RobotViewport
+            :pointCloudData="pointCloudData"
+            :showPointCloud="showPointCloud"
             :mode="currentMode"
+            :dualMode="dualMode"
             @joint-limits-loaded="handleJointLimits"
           />
 
-        <!-- Floating Camera Panel -->
-        <CameraPanel :imageUrl="cameraRgbUrl" />
+        <!-- Floating Camera Panel(s) -->
+        <template v-if="dualMode">
+          <CameraPanel :imageUrl="cameraRgbUrls.left" label="Left Camera" position="top" />
+          <CameraPanel :imageUrl="cameraRgbUrls.right" label="Right Camera" position="bottom" />
+        </template>
+        <CameraPanel v-else :imageUrl="cameraRgbUrl" />
 
         <!-- Right Sidebar (Data & Controls) -->
         <RightSidebar 
@@ -75,6 +80,10 @@ const chartDataHistory = ref({});
 const jointLimits = ref({});
 const gripperDistance = ref(0);
 
+// Dual-arm state
+const dualMode = ref(false);
+const cameraRgbUrls = ref({ left: null, right: null });
+
 // Replay state
 const replayCurrentFrame = ref(0);
 const replayTotalFrames = ref(0);
@@ -121,13 +130,12 @@ const initWebSocket = () => {
 
   socket.onopen = () => console.log('WS Connected');
 
-  const sendGripperSet = (distanceMm) => {
+  const sendGripperSet = (distanceMm, side = null) => {
     const distanceMeters = distanceMm / 1000;
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({
-        type: 'gripper_set',
-        distance: distanceMeters
-      }));
+      const msg = { type: 'gripper_set', distance: distanceMeters };
+      if (side) msg.side = side;
+      socket.send(JSON.stringify(msg));
     }
   };
 
@@ -174,22 +182,46 @@ const handleMessagepackData = (arrayBuffer) => {
 
   try {
     const data = msgpack.decode(packedData);
-    if (data.video) {
-      const blob = new Blob([data.video], { type: 'image/jpeg' });
-      const newUrl = URL.createObjectURL(blob);
-      if (cameraRgbUrl.value) URL.revokeObjectURL(cameraRgbUrl.value);
-      cameraRgbUrl.value = newUrl;
-    }
-    if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
-      const points = data.pointcloud;
-      pointCloudData.value = { points };
-      window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points } }));
-    }
-    if (data.joints && Array.isArray(data.joints)) {
-      updateJoints(data.joints);
-    }
-    if (typeof data.gripper_distance === 'number') {
-      gripperDistance.value = data.gripper_distance * 1000;
+
+    if (data.dual_mode && data.arms) {
+      // ── Dual-arm protocol ──
+      for (const [side, armData] of Object.entries(data.arms)) {
+        // Video per arm
+        if (armData.video) {
+          const blob = new Blob([armData.video], { type: 'image/jpeg' });
+          const newUrl = URL.createObjectURL(blob);
+          if (cameraRgbUrls.value[side]) URL.revokeObjectURL(cameraRgbUrls.value[side]);
+          cameraRgbUrls.value[side] = newUrl;
+        }
+        // Joints per arm (prefix with side for 3D viewport)
+        if (armData.joints && Array.isArray(armData.joints)) {
+          const jointsWithSide = armData.joints.map(j => ({ ...j, side }));
+          updateJoints(jointsWithSide);
+        }
+        // Gripper (use left arm as default display)
+        if (typeof armData.gripper_distance === 'number' && side === 'left') {
+          gripperDistance.value = armData.gripper_distance * 1000;
+        }
+      }
+    } else {
+      // ── Single-arm protocol (unchanged) ──
+      if (data.video) {
+        const blob = new Blob([data.video], { type: 'image/jpeg' });
+        const newUrl = URL.createObjectURL(blob);
+        if (cameraRgbUrl.value) URL.revokeObjectURL(cameraRgbUrl.value);
+        cameraRgbUrl.value = newUrl;
+      }
+      if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
+        const points = data.pointcloud;
+        pointCloudData.value = { points };
+        window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points } }));
+      }
+      if (data.joints && Array.isArray(data.joints)) {
+        updateJoints(data.joints);
+      }
+      if (typeof data.gripper_distance === 'number') {
+        gripperDistance.value = data.gripper_distance * 1000;
+      }
     }
   } catch (e) {
     console.error('Failed to decode MessagePack:', e);
@@ -399,7 +431,19 @@ const handleSeek = (frameIdx) => {
   updateFrameFromLocal(frameIdx);
 };
 
-onMounted(() => {
+onMounted(async () => {
+  // Detect dual-arm mode from backend
+  try {
+    const resp = await fetch('http://localhost:8080/system/info');
+    if (resp.ok) {
+      const info = await resp.json();
+      dualMode.value = info.dual_mode || false;
+      console.log('System info:', info);
+    }
+  } catch (e) {
+    console.warn('Failed to fetch system info:', e);
+  }
+
   initWebSocket();
   if (currentMode.value === 'replay') {
     fetchTrajectory();

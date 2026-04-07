@@ -10,7 +10,7 @@
     <div class="floating-panel camera-panel">
       <div class="panel-header">
         <CameraIcon />
-        <span>Camera (RGB)</span>
+        <span>{{ label }}</span>
       </div>
 
       <div class="camera-feed">
@@ -27,7 +27,9 @@
 import CameraIcon from '@/components/icons/CameraIcon.vue';
 
 defineProps({
-  imageUrl: { type: String, default: null }
+  imageUrl: { type: String, default: null },
+  label: { type: String, default: 'Camera (RGB)' },
+  position: { type: String, default: 'top' }  // 'top' or 'bottom' for dual-cam layout
 });
 </script>
 
@@ -43,7 +45,7 @@ defineProps({
 .camera-panel {
   position: absolute;
   left: 1.5rem;
-  top: 1rem;
+  top: v-bind("position === 'bottom' ? '290px' : '1rem'");
   width: 371px;
   height: 272px;
 }

@@ -20,7 +20,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 const props = defineProps({
   pointCloudData: { default: null },
   showPointCloud: { type: Boolean, default: true },
-  mode: { type: String, default: 'realtime' }
+  mode: { type: String, default: 'realtime' },
+  dualMode: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['joint-limit-loaded']);
@@ -37,6 +38,8 @@ let limitToastTimer = null;
 let scene, camera, renderer, controls, loader;
 let raycaster, pointer;
 let robotModel = null;
+let robotModels = {};  // { left: model, right: model } for dual mode
+let draggingSide = null;  // Track which arm is being dragged in dual mode
 let pointCloudPoints = null;
 let pointCloudGeometry = null;
 let pointCloudMaterial = null;
@@ -112,9 +115,30 @@ const initScene = () => {
     return url;
   });
 
-  manager.onLoad = () => {
-    if (robotModel) {
-      robotModel.traverse((child) => {
+  // Material is applied in loadSingleURDF
+
+  const loadSingleURDF = (urdfUrl, side = null, offset = 0) => {
+    loader.load(urdfUrl, robot => {
+      if (side) {
+        robotModels[side] = robot;
+        // Also set robotModel to first loaded for backward compat
+        if (!robotModel) robotModel = robot;
+      } else {
+        robotModel = robot;
+      }
+      scene.add(robot);
+
+      // Position offset for dual mode
+      if (offset !== 0) {
+        robot.position.x = offset;
+      } else {
+        const box = new THREE.Box3().setFromObject(robot);
+        const center = box.getCenter(new THREE.Vector3());
+        robot.position.sub(center);
+      }
+
+      // Apply material
+      robot.traverse((child) => {
         if (child.isMesh) {
           child.material = metalMaterial;
           child.castShadow = true;
@@ -122,40 +146,35 @@ const initScene = () => {
           child.userData.originalMaterial = metalMaterial;
         }
       });
-    }
+
+      // Extract and emit joint limits (from first loaded model)
+      if (!side || side === 'left') {
+        const limit = {};
+        if (robot.joints) {
+          for (const [name, joint] of Object.entries(robot.joints)) {
+            if (joint.limit) {
+              limit[name] = { lower: joint.limit.lower, upper: joint.limit.upper };
+            }
+          }
+        }
+        emit('joint-limit-loaded', limit);
+      }
+    });
   };
 
   const loadURDF = async () => {
     try {
       const response = await fetch('http://localhost:8080/urdf');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      const urdfUrl = data.url;
-      loader.load(urdfUrl, robot => {
-        robotModel = robot;
-        scene.add(robot);
-        const box = new THREE.Box3().setFromObject(robot);
-        const center = box.getCenter(new THREE.Vector3());
-        robot.position.sub(center);
 
-        // Extract and emit joint limit
-        const limit = {};
-        if (robot.joints) {
-          for (const [name, joint] of Object.entries(robot.joints)) {
-            console.log(joint)
-            if (joint.limit) {
-              limit[name] = {
-                lower: joint.limit.lower,
-                upper: joint.limit.upper
-              };
-              console.log("limit[name]=", limit[name])
-            }
-          }
-        }
-        emit('joint-limit-loaded', limit);
-      });
+      if (data.dual_mode) {
+        // Load two models with X-axis offset
+        loadSingleURDF(data.left.url, 'left', -0.35);
+        loadSingleURDF(data.right.url, 'right', 0.35);
+      } else {
+        loadSingleURDF(data.url);
+      }
     } catch (error) {
       console.error('Failed to load URDF:', error);
     }
@@ -202,13 +221,11 @@ const findJointByName = (model, name) => {
   return result;
 };
 
-const sendJointCommand = (jointName, deltaAngle) => {
+const sendJointCommand = (jointName, deltaAngle, side = null) => {
   if (window.socket && window.socket.readyState === WebSocket.OPEN) {
-    window.socket.send(JSON.stringify({
-      type: 'joint_command',
-      joint_name: jointName,
-      delta_angle: deltaAngle
-    }));
+    const msg = { type: 'joint_command', joint_name: jointName, delta_angle: deltaAngle };
+    if (side) msg.side = side;
+    window.socket.send(JSON.stringify(msg));
   }
 };
 
@@ -224,18 +241,27 @@ const MIMIC_JOINTS = {
 };
 
 const handleJointStateUpdate = (event) => {
-  if (!robotModel) return;
-
   const jointStates = event.detail;
 
   jointStates.forEach(joint => {
     const jointName = joint.name;
     const angle = joint.angle;
+    const side = joint.side;  // 'left', 'right', or undefined
 
-    // Update local state map
-    currentJointAngles.value[jointName] = angle;
+    // Determine target model
+    let targetModel;
+    if (side && robotModels[side]) {
+      targetModel = robotModels[side];
+    } else {
+      targetModel = robotModel;
+    }
+    if (!targetModel) return;
 
-    const jointObj = findJointByName(robotModel, jointName);
+    // Update local state map (keyed by side+name for dual mode)
+    const stateKey = side ? `${side}_${jointName}` : jointName;
+    currentJointAngles.value[stateKey] = angle;
+
+    const jointObj = findJointByName(targetModel, jointName);
     if (jointObj && jointObj.setJointValue) {
       jointObj.setJointValue(angle);
     }
@@ -243,7 +269,7 @@ const handleJointStateUpdate = (event) => {
     // Handle mimic joints (parallel linkage)
     if (MIMIC_JOINTS[jointName]) {
       MIMIC_JOINTS[jointName].forEach(mimicName => {
-        const mimicJoint = findJointByName(robotModel, mimicName);
+        const mimicJoint = findJointByName(targetModel, mimicName);
         if (mimicJoint && mimicJoint.setJointValue) {
           mimicJoint.setJointValue(angle);
         }
@@ -362,17 +388,32 @@ const onPointerDown = (event) => {
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
   raycaster.setFromCamera(pointer, camera);
-  const intersects = raycaster.intersectObject(robotModel, true);
+
+  // In dual mode, raycast against all models
+  let intersects = [];
+  draggingSide = null;
+  if (Object.keys(robotModels).length > 0) {
+    for (const [side, model] of Object.entries(robotModels)) {
+      const hits = raycaster.intersectObject(model, true);
+      hits.forEach(h => { h._side = side; });
+      intersects.push(...hits);
+    }
+    intersects.sort((a, b) => a.distance - b.distance);
+  } else if (robotModel) {
+    intersects = raycaster.intersectObject(robotModel, true);
+  }
 
   if (intersects.length > 0) {
     const hitObject = intersects[0].object;
+    draggingSide = intersects[0]._side || null;
+    const hitModelRoot = draggingSide ? robotModels[draggingSide] : robotModel;
 
     let targetLink = hitObject;
-    while (targetLink && targetLink !== robotModel) {
+    while (targetLink && targetLink !== hitModelRoot) {
       if (targetLink.type === 'URDFLink') break;
       targetLink = targetLink.parent;
     }
-    if (!targetLink || targetLink === robotModel) targetLink = hitObject.parent;
+    if (!targetLink || targetLink === hitModelRoot) targetLink = hitObject.parent;
 
     highlightLink(targetLink);
     clearHelpers();
@@ -390,13 +431,14 @@ const onPointerDown = (event) => {
           draggingJoint = targetJoint;
           isDragging = true;
           // Use real-time angle from backend
-          initialJointAngle = currentJointAngles.value[draggingJoint.urdfName] || 0;
+          const angleKey = draggingSide ? `${draggingSide}_${draggingJoint.urdfName}` : draggingJoint.urdfName;
+          initialJointAngle = currentJointAngles.value[angleKey] || 0;
           accumulatedDeltaAngle = 0;
           controls.enabled = false;
 
           jointControlTimer = setInterval(() => {
             if (accumulatedDeltaAngle !== 0) {
-              sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle);
+              sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle, draggingSide);
               accumulatedDeltaAngle = 0;
             }
           }, 1000 / JOINT_CONTROL_HZ);
@@ -476,11 +518,12 @@ const onPointerUp = () => {
       jointControlTimer = null;
     }
     if (accumulatedDeltaAngle !== 0) {
-      sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle);
+      sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle, draggingSide);
       accumulatedDeltaAngle = 0;
     }
     isDragging = false;
     draggingJoint = null;
+    draggingSide = null;
     controls.enabled = true;
   }
 };
