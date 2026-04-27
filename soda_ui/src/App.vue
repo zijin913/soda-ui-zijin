@@ -26,7 +26,7 @@
         <template v-if="dualMode">
           <CameraPanel :imageUrl="cameraRgbUrls.left" label="Left Camera" position="top" />
           <CameraPanel :imageUrl="cameraRgbUrls.right" label="Right Camera" position="bottom" />
-          <CameraPanel :imageUrl="cameraRgbUrls.side" label="Side Camera" position="right" />
+          <CameraPanel :imageUrl="cameraRgbUrls.side" label="Side Camera" position="lower" />
         </template>
         <CameraPanel v-else :imageUrl="cameraRgbUrl" />
 
@@ -210,6 +210,12 @@ const handleMessagepackData = (arrayBuffer) => {
         const newUrl = URL.createObjectURL(blob);
         if (cameraRgbUrls.value.side) URL.revokeObjectURL(cameraRgbUrls.value.side);
         cameraRgbUrls.value.side = newUrl;
+      }
+      // Point cloud (top-level, sent at ~5Hz from left arm's wrist camera in left base frame)
+      if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
+        const points = data.pointcloud;
+        pointCloudData.value = { points };
+        window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points } }));
       }
     } else {
       // ── Single-arm protocol (unchanged) ──

@@ -108,16 +108,19 @@ const initScene = () => {
   loader = new URDFLoader(manager);
   const metalMaterial = new THREE.MeshStandardMaterial({ color: 0xc0c0c0, roughness: 0.2, metalness: 1.0 });
 
+  // Mesh paths inside URDFs use './meshes/...' relative to their URDF.
+  // The URDFLoader resolves them via the working URL's parent path. We override
+  // here only to strip the './' prefix so the loader can resolve correctly
+  // against the URDF's own URL (which is what we want regardless of which
+  // {arm}_{gripper} directory we're loading from).
   manager.setURLModifier((url) => {
-    if (url.startsWith('./')) {
-      return `http://localhost:8080/assets/l6y_gp100/${url.substring(2)}`;
-    }
+    // urdf-loader passes the resolved absolute URL of the mesh; pass through.
     return url;
   });
 
   // Material is applied in loadSingleURDF
 
-  const loadSingleURDF = (urdfUrl, side = null, offset = 0) => {
+  const loadSingleURDF = (urdfUrl, side = null, position = null) => {
     loader.load(urdfUrl, robot => {
       if (side) {
         robotModels[side] = robot;
@@ -128,9 +131,12 @@ const initScene = () => {
       }
       scene.add(robot);
 
-      // Position offset for dual mode
-      if (offset !== 0) {
-        robot.position.x = offset;
+      // Position handling:
+      //   - dual_mode: server returns explicit XYZ position per arm (in left-arm
+      //     base frame, from extrinsics.json), use it directly.
+      //   - single arm: center the model.
+      if (position !== null) {
+        robot.position.set(position[0], position[1], position[2]);
       } else {
         const box = new THREE.Box3().setFromObject(robot);
         const center = box.getCenter(new THREE.Vector3());
@@ -169,9 +175,12 @@ const initScene = () => {
       const data = await response.json();
 
       if (data.dual_mode) {
-        // Load two models with X-axis offset
-        loadSingleURDF(data.left.url, 'left', -0.35);
-        loadSingleURDF(data.right.url, 'right', 0.35);
+        // Server provides per-arm position (left arm at origin, right arm at
+        // right_base_in_left from hand-eye extrinsics, e.g. [0, -0.448, 0]).
+        const leftPos = data.left.position || [0.0, 0.0, 0.0];
+        const rightPos = data.right.position || [0.0, -0.448, 0.0];
+        loadSingleURDF(data.left.url, 'left', leftPos);
+        loadSingleURDF(data.right.url, 'right', rightPos);
       } else {
         loadSingleURDF(data.url);
       }
@@ -188,9 +197,11 @@ const initScene = () => {
       }
       const data = await response.json();
       gripperJointNames = data.joints || [];
+      rebuildMimicMap();
     } catch (error) {
       console.error('Failed to fetch gripper joints:', error);
       gripperJointNames = [];
+      rebuildMimicMap();
     }
   };
 
@@ -229,15 +240,15 @@ const sendJointCommand = (jointName, deltaAngle, side = null) => {
   }
 };
 
-// Mimic joint definitions for GP100 gripper parallel linkage
-const MIMIC_JOINTS = {
-  'gripper_left_joint_1': [
-    'gripper_left_joint_2',
-    'gripper_left_helper_joint',
-    'gripper_right_joint_1',
-    'gripper_right_joint_2',
-    'gripper_right_helper_joint'
-  ]
+// Mimic joint definitions: which joints follow the driven gripper joint.
+// Auto-derived from the gripper joint list (excluding the driver).
+// gp100 parallel-linkage has 5 mimics; gr100 lobster claw has 1.
+const MIMIC_JOINTS = {};
+const rebuildMimicMap = () => {
+  // Driver is always 'gripper_left_joint_1'; everything else mimics it.
+  const driver = 'gripper_left_joint_1';
+  const mimics = gripperJointNames.filter(n => n !== driver);
+  MIMIC_JOINTS[driver] = mimics;
 };
 
 const handleJointStateUpdate = (event) => {

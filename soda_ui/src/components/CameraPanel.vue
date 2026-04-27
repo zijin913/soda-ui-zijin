@@ -29,7 +29,11 @@ import CameraIcon from '@/components/icons/CameraIcon.vue';
 defineProps({
   imageUrl: { type: String, default: null },
   label: { type: String, default: 'Camera (RGB)' },
-  position: { type: String, default: 'top' }  // 'top' or 'bottom' for dual-cam layout
+  // Slot positions, all anchored to the LEFT side, stacking from top:
+  //   'top'    = row 0 (1rem)
+  //   'bottom' = row 1 (290px)
+  //   'lower'  = row 2 (580px)
+  position: { type: String, default: 'top' }
 });
 </script>
 
@@ -44,9 +48,11 @@ defineProps({
 
 .camera-panel {
   position: absolute;
-  left: v-bind("position === 'right' ? 'auto' : '1.5rem'");
-  right: v-bind("position === 'right' ? '320px' : 'auto'");
-  top: v-bind("position === 'bottom' ? '290px' : '1rem'");
+  /* All slots anchored to left side */
+  left: 1.5rem;
+  right: auto;
+  /* Vertical slot: 1rem / 290px / 580px (panel height ~272px + 18px gap) */
+  top: v-bind("position === 'lower' ? '580px' : (position === 'bottom' ? '290px' : '1rem')");
   width: 371px;
   height: 272px;
 }
