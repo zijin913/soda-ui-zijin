@@ -6,26 +6,31 @@
         <GripperIcon />
         <span>Gripper</span>
       </div>
-       <div class="gripper-controls">
-         <div class="slider-wrapper">
-           <input
-             type="range"
-             class="gripper-slider"
-             v-model="targetGripperValue"
-             min="10"
-             max="100"
-             @input="onSliderChange"
-           />
-           <div
-             class="current-indicator"
-             :style="{ left: currentIndicatorLeft }"
-           ></div>
-         </div>
-         <div class="gripper-value">
-           <span class="val">{{ targetGripperValue }}</span>
-           <span class="unit">mm</span>
-         </div>
-       </div>
+      <div
+        v-for="side in grippersToShow"
+        :key="side"
+        class="gripper-controls"
+      >
+        <span v-if="dualMode" class="side-tag" :class="`side-tag-${side}`">{{ side === 'left' ? 'L' : 'R' }}</span>
+        <div class="slider-wrapper">
+          <input
+            type="range"
+            class="gripper-slider"
+            :value="targetGripperValues[side]"
+            min="10"
+            max="100"
+            @input="onSliderInput(side, $event)"
+          />
+          <div
+            class="current-indicator"
+            :style="{ left: currentIndicatorLeft(side) }"
+          ></div>
+        </div>
+        <div class="gripper-value">
+          <span class="val">{{ targetGripperValues[side] }}</span>
+          <span class="unit">mm</span>
+        </div>
+      </div>
     </div>
 
     <!-- Velocity / Charts 模块 -->
@@ -35,6 +40,12 @@
         <div class="switch-pill" :class="{ active: activeTab === 'Angle' }" @click="activeTab = 'Angle'">Angle</div>
         <div class="switch-pill" :class="{ active: activeTab === 'Velocity' }" @click="activeTab = 'Velocity'">Velocity</div>
         <div class="switch-pill" :class="{ active: activeTab === 'Torque' }" @click="activeTab = 'Torque'">Torque</div>
+      </div>
+
+      <!-- Legend (dual mode) -->
+      <div v-if="dualMode && mode !== 'replay'" class="legend">
+        <span><i class="dot dot-left"></i>Left</span>
+        <span><i class="dot dot-right"></i>Right</span>
       </div>
 
       <!-- Charts List -->
@@ -52,17 +63,26 @@
             </div>
             <div class="waveform">
               <svg width="100%" height="100%" viewBox="0 0 500 50" preserveAspectRatio="none">
-                <!-- Data Path -->
-                <path :d="generatePath(id)" fill="none" stroke="#3DCDA5" stroke-width="1.5" vector-effect="non-scaling-stroke" />
-                
+                <!-- Left arm (also used for single-arm and replay) -->
+                <path :d="generatePath(id, 'left')" fill="none" stroke="#3DCDA5" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+                <!-- Right arm (dual mode realtime) -->
+                <path
+                  v-if="dualMode && mode !== 'replay'"
+                  :d="generatePath(id, 'right')"
+                  fill="none"
+                  stroke="#F0833A"
+                  stroke-width="1.5"
+                  vector-effect="non-scaling-stroke"
+                />
+
                 <!-- Playhead Line (Replay Mode) -->
-                <line 
+                <line
                   v-if="mode === 'replay'"
-                  :x1="getCursorX() + 0.5" 
-                  y1="0" 
-                  :x2="getCursorX() + 0.5" 
-                  y2="50" 
-                  stroke="#FFFFFF" 
+                  :x1="getCursorX() + 0.5"
+                  y1="0"
+                  :x2="getCursorX() + 0.5"
+                  y2="50"
+                  stroke="#FFFFFF"
                   stroke-width="1"
                   shape-rendering="crispEdges"
                 />
@@ -80,54 +100,82 @@ import { ref, computed, watch } from 'vue';
 import GripperIcon from '@/components/icons/GripperIcon.vue';
 
 const props = defineProps({
-  historyData: { type: Object, required: true },
+  historyData: { type: Object, required: true },     // { left: { id: {angle,velocity,torque} }, right: {...} }
+  // Per-(side,id) baseline angle, captured when the joint first appears. The
+  // chart plots (val - baseline) for the Angle tab so motion is visible even
+  // when the joint rests far from absolute zero (e.g. shoulder pitch at -1.5 rad).
+  baselines: { type: Object, default: () => ({ left: {}, right: {} }) },
   jointNames: { type: Object, default: () => ({}) },
-  gripperDistance: { type: Number, default: 0 },
+  gripperDistances: { type: Object, default: () => ({ left: 0, right: 0 }) },
+  dualMode: { type: Boolean, default: false },
   fullData: { type: Object, default: () => ({}) },
   mode: { type: String, default: 'realtime' },
   currentFrame: { type: Number, default: 0 },
-  totalFrames: { type: Number, default: 0 },
-  jointLimits: { type: Object, default: () => ({}) }
+  totalFrames: { type: Number, default: 0 }
 });
 
 const emit = defineEmits(['gripper-change']);
 
-const targetGripperValue = ref(Math.round(props.gripperDistance) || 10);
-const userInteracted = ref(false);
-
-watch(() => props.gripperDistance, (newVal) => {
-  if (!userInteracted.value) {
-    targetGripperValue.value = Math.round(newVal);
-  }
+const targetGripperValues = ref({
+  left: Math.round(props.gripperDistances.left) || 10,
+  right: Math.round(props.gripperDistances.right) || 10,
 });
+const userInteracted = ref({ left: false, right: false });
 
-const onSliderChange = () => {
-  userInteracted.value = true;
-  const val = Number(targetGripperValue.value);
-  emit('gripper-change', val);
+const grippersToShow = computed(() => props.dualMode ? ['left', 'right'] : ['left']);
+
+watch(() => props.gripperDistances, (val) => {
+  for (const side of ['left', 'right']) {
+    if (!userInteracted.value[side] && typeof val?.[side] === 'number') {
+      targetGripperValues.value[side] = Math.round(val[side]);
+    }
+  }
+}, { deep: true });
+
+const onSliderInput = (side, event) => {
+  userInteracted.value[side] = true;
+  const val = Number(event.target.value);
+  targetGripperValues.value[side] = val;
+  emit('gripper-change', { side, value: val });
   if (window.sendGripperSet) {
-    window.sendGripperSet(val);
+    // Keep single-arm call signature unchanged (no side arg) so existing backends stay happy.
+    if (props.dualMode) window.sendGripperSet(val, side);
+    else window.sendGripperSet(val);
   }
 };
 
-const currentIndicatorLeft = computed(() => {
-  const val = props.gripperDistance;
+const currentIndicatorLeft = (side) => {
+  const val = props.gripperDistances?.[side] ?? 0;
   const min = 10;
   const max = 100;
   const clamped = Math.max(min, Math.min(max, val));
   const percent = (clamped - min) / (max - min);
-  // (100% - 16px) is the available track width for center-to-center movement
-  // + 8px is the start offset (half thumb width)
-  // - 4px centers the 8px indicator
+  // (100% - 16px) is the track width between thumb centers; +4px centers the 8px indicator.
   return `calc((100% - 16px) * ${percent} + 4px)`;
-});
+};
 
 const activeTab = ref('Angle');
 const VIEW_WINDOW = 500; // Frames to show in window
 
+// Symmetric ±half-range per tab. Keeps 0 at the chart vertical midline so
+// every chart's zero line is aligned, and zooms in tighter than URDF limits
+// so small fluctuations stay visible. Tweak here to taste.
+const VIEW_HALF_RANGE = {
+  Angle: 1.0,    // ±1.0 rad (~57°)
+  Velocity: 0.5, // ±0.5 rad/s
+  Torque: 10,    // ±10 Nm
+};
+
 const sortedJointIds = computed(() => {
-  const source = props.mode === 'replay' ? props.fullData : props.historyData;
-  return Object.keys(source).map(Number).sort((a, b) => a - b);
+  if (props.mode === 'replay') {
+    return Object.keys(props.fullData).map(Number).sort((a, b) => a - b);
+  }
+  // Realtime: union of joint ids across both arms
+  const ids = new Set([
+    ...Object.keys(props.historyData?.left || {}),
+    ...Object.keys(props.historyData?.right || {}),
+  ]);
+  return [...ids].map(Number).sort((a, b) => a - b);
 });
 
 const getWindowStart = () => {
@@ -146,24 +194,10 @@ const getCursorX = () => {
   return relativeIndex; 
 };
 
-const getLimitRange = (id) => {
-  const name = props.jointNames[id];
-  const limit = name ? props.jointLimits[name] : null;
-  // Default range if no limits found: -3.14 to 3.14 (approx -Pi to Pi)
-  if (!limit) return { min: -3.14, max: 3.14 };
-  return { min: limit.lower, max: limit.upper };
-};
-
-const getYAxisLabels = (id) => {
-  if (activeTab.value !== 'Angle') return ['1', '0', '-1', '-2'];
-  
-  const { min, max } = getLimitRange(id);
-  // Show Max, Mid, Min
-  return [
-    max.toFixed(1),
-    ((max + min) / 2).toFixed(1),
-    min.toFixed(1)
-  ];
+const getYAxisLabels = () => {
+  const m = VIEW_HALF_RANGE[activeTab.value] ?? 1;
+  // Top/middle/bottom — symmetric around zero
+  return [`+${m}`, '0', `-${m}`];
 };
 
 const getCurrentValue = (id) => {
@@ -180,26 +214,36 @@ const getCurrentValue = (id) => {
 };
 
 // SVG Path Generator
-const generatePath = (jointIndex) => {
+const generatePath = (jointIndex, side = 'left') => {
   let data;
-  
+
+  // For Angle, subtract a baseline so the chart shows deviation from rest
+  // (otherwise a joint resting at e.g. -1.5 rad sits outside the ±1.0 view).
+  // Realtime: baseline captured by App.vue on first observation per (side, id).
+  // Replay: baseline = first frame of the trajectory.
+  let baseline = 0;
+
   if (props.mode === 'realtime') {
-    const jointData = props.historyData[jointIndex];
+    const jointData = props.historyData?.[side]?.[jointIndex];
     if (!jointData) return `M0 25 L${VIEW_WINDOW} 25`;
-    
-    if (activeTab.value === 'Angle') data = jointData.angle;
-    else if (activeTab.value === 'Velocity') data = jointData.velocity;
+
+    if (activeTab.value === 'Angle') {
+      data = jointData.angle;
+      baseline = props.baselines?.[side]?.[jointIndex] ?? 0;
+    } else if (activeTab.value === 'Velocity') data = jointData.velocity;
     else if (activeTab.value === 'Torque') data = jointData.torque;
   } else {
     // Replay Mode
     const jointData = props.fullData[jointIndex];
     if (!jointData) return `M0 25 L${VIEW_WINDOW} 25`;
-    
+
     let fullList;
-    if (activeTab.value === 'Angle') fullList = jointData.angle;
-    else if (activeTab.value === 'Velocity') fullList = jointData.velocity;
+    if (activeTab.value === 'Angle') {
+      fullList = jointData.angle;
+      baseline = (fullList && fullList.length > 0) ? fullList[0] : 0;
+    } else if (activeTab.value === 'Velocity') fullList = jointData.velocity;
     else if (activeTab.value === 'Torque') fullList = jointData.torque;
-    
+
     // Slice for window
     const start = getWindowStart();
     const end = start + VIEW_WINDOW;
@@ -213,40 +257,28 @@ const generatePath = (jointIndex) => {
   // X step is 1 since width=500 and data len <= 500
   const step = 1; 
   
-  let minVal = -3;
-  let maxVal = 3;
-
-  if (activeTab.value === 'Angle') {
-    const range = getLimitRange(jointIndex);
-    minVal = range.min;
-    maxVal = range.max;
-  } else if (activeTab.value === 'Velocity') {
-     // Approx range for velocity
-     minVal = -2; maxVal = 2;
-  } else {
-     // Approx range for torque
-     minVal = -50; maxVal = 50;
-  }
+  const halfRange = VIEW_HALF_RANGE[activeTab.value] ?? 1;
+  const minVal = -halfRange;
+  const maxVal = halfRange;
   
   const range = maxVal - minVal;
-  const scaleY = (height * 0.8) / (range || 1); // Avoid div by zero
-  const midOffset = (height / 2) - ((maxVal + minVal) / 2 * -scaleY); 
-  // Wait, let's map: val -> y
-  // y = 0 is top, y = height is bottom.
-  // We want map [minVal, maxVal] to [height*0.9, height*0.1] (padding)
-  
+  const yTop = height * 0.1;
+  const yBottom = height * 0.9;
   const mapY = (val) => {
-    // Normalizing val to 0..1 based on min/max
-    const pct = (val - minVal) / (range || 1);
-    // Invert because SVG y=0 is top
-    return height * 0.9 - (pct * height * 0.8);
+    // Clamp into the view window so values outside the symmetric range still
+    // render — they pin to the top or bottom edge instead of disappearing
+    // off-canvas (e.g. a joint resting at -1.5 rad with a ±1.0 view).
+    const clamped = Math.min(maxVal, Math.max(minVal, val));
+    const pct = (clamped - minVal) / (range || 1);
+    // SVG y=0 is top, so larger values map closer to yTop
+    return yBottom - pct * (yBottom - yTop);
   };
 
   let path = '';
 
   data.forEach((val, index) => {
     const x = index * step;
-    const y = mapY(val);
+    const y = mapY(val - baseline);
     if (index === 0) path = `M${x} ${y}`;
     else path += ` L${x} ${y}`;
   });
@@ -387,6 +419,34 @@ const generatePath = (jointIndex) => {
   border-radius: 24px;
 }
 .switch-pill.active { background: #3C3E40; color: white; }
+
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: #aaa;
+  margin: -8px 0 12px 4px;
+}
+.legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.legend .dot-left { background: #3DCDA5; }
+.legend .dot-right { background: #F0833A; }
+
+.side-tag {
+  font-size: 11px;
+  font-weight: 600;
+  width: 16px;
+  text-align: center;
+  color: #aaa;
+}
+.side-tag-left { color: #3DCDA5; }
+.side-tag-right { color: #F0833A; }
 
 .charts-container {
   flex: 1;

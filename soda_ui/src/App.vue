@@ -31,15 +31,16 @@
         <CameraPanel v-else :imageUrl="cameraRgbUrl" />
 
         <!-- Right Sidebar (Data & Controls) -->
-        <RightSidebar 
-          :historyData="chartDataHistory" 
-          :jointNames="jointNames" 
-          :gripperDistance="gripperDistance" 
+        <RightSidebar
+          :historyData="chartDataHistory"
+          :baselines="chartBaselines"
+          :jointNames="jointNames"
+          :gripperDistances="gripperDistances"
+          :dualMode="dualMode"
           :fullData="fullJointData"
           :mode="currentMode"
           :currentFrame="replayCurrentFrame"
           :totalFrames="replayTotalFrames"
-          :jointLimits="jointLimits"
         />
       </main>
 
@@ -77,9 +78,13 @@ const pointCloudData = ref(null);
 const showPointCloud = ref(true);
 const MAX_HISTORY = 500;
 const jointNames = ref({});
-const chartDataHistory = ref({});
+const chartDataHistory = ref({ left: {}, right: {} });
+// First angle observed per (side, id). Used as the chart's zero so we plot
+// deviation from rest instead of absolute joint angle (otherwise a joint
+// resting at e.g. -1.5 rad sits outside the ±1.0 view window).
+const chartBaselines = ref({ left: {}, right: {} });
 const jointLimits = ref({});
-const gripperDistance = ref(0);
+const gripperDistances = ref({ left: 0, right: 0 });
 
 // Dual-arm state
 const dualMode = ref(false);
@@ -119,6 +124,24 @@ const fullJointData = computed(() => {
   return data;
 });
 
+// Split backend's [[x,y,z,r,g,b], ...] into separate points/colors arrays for the viewport.
+// Falls back to no colors if rows are length 3 (legacy/uncolored clouds).
+const splitXyzRgb = (raw) => {
+  const first = raw[0];
+  if (!Array.isArray(first) || first.length < 6) {
+    return { points: raw };
+  }
+  const n = raw.length;
+  const points = new Array(n);
+  const colors = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = raw[i];
+    points[i] = [r[0], r[1], r[2]];
+    colors[i] = [r[3], r[4], r[5]];
+  }
+  return { points, colors };
+};
+
 // WebSocket Logic
 let socket = null;
 
@@ -155,25 +178,32 @@ const handleJointLimits = (limits) => {
   jointLimits.value = limits;
 };
 
-const updateJoints = (joints) => {
+const updateJoints = (joints, side = 'left') => {
+  if (!chartDataHistory.value[side]) chartDataHistory.value[side] = {};
+  if (!chartBaselines.value[side]) chartBaselines.value[side] = {};
+  const bucket = chartDataHistory.value[side];
+  const baselines = chartBaselines.value[side];
   joints.forEach(joint => {
     const id = joint.id;
     if (joint.name) {
       jointNames.value[id] = joint.name;
     }
-    if (!chartDataHistory.value[id]) {
-      chartDataHistory.value[id] = { angle: [], velocity: [], torque: [] };
+    if (!bucket[id]) {
+      bucket[id] = { angle: [], velocity: [], torque: [] };
+      baselines[id] = joint.angle || 0;
     }
-    chartDataHistory.value[id].angle.push(joint.angle || 0);
-    chartDataHistory.value[id].velocity.push(joint.velocity || 0);
-    chartDataHistory.value[id].torque.push(joint.torque || 0);
+    bucket[id].angle.push(joint.angle || 0);
+    bucket[id].velocity.push(joint.velocity || 0);
+    bucket[id].torque.push(joint.torque || 0);
 
-    if (chartDataHistory.value[id].angle.length > MAX_HISTORY) chartDataHistory.value[id].angle.shift();
-    if (chartDataHistory.value[id].velocity.length > MAX_HISTORY) chartDataHistory.value[id].velocity.shift();
-    if (chartDataHistory.value[id].torque.length > MAX_HISTORY) chartDataHistory.value[id].torque.shift();
+    if (bucket[id].angle.length > MAX_HISTORY) bucket[id].angle.shift();
+    if (bucket[id].velocity.length > MAX_HISTORY) bucket[id].velocity.shift();
+    if (bucket[id].torque.length > MAX_HISTORY) bucket[id].torque.shift();
   });
 
-  window.dispatchEvent(new CustomEvent('mujoco-joint-states', { detail: joints }));
+  // 3D viewport keys joints by `side` field; preserve any existing one, fall back to the arg
+  const detail = joints.map(j => ({ ...j, side: j.side ?? side }));
+  window.dispatchEvent(new CustomEvent('mujoco-joint-states', { detail }));
 };
 
 const handleMessagepackData = (arrayBuffer) => {
@@ -194,14 +224,13 @@ const handleMessagepackData = (arrayBuffer) => {
           if (cameraRgbUrls.value[side]) URL.revokeObjectURL(cameraRgbUrls.value[side]);
           cameraRgbUrls.value[side] = newUrl;
         }
-        // Joints per arm (prefix with side for 3D viewport)
+        // Joints per arm — keyed by side in chartDataHistory; 3D viewport gets `side` via updateJoints
         if (armData.joints && Array.isArray(armData.joints)) {
-          const jointsWithSide = armData.joints.map(j => ({ ...j, side }));
-          updateJoints(jointsWithSide);
+          updateJoints(armData.joints, side);
         }
-        // Gripper (use left arm as default display)
-        if (typeof armData.gripper_distance === 'number' && side === 'left') {
-          gripperDistance.value = armData.gripper_distance * 1000;
+        // Gripper distance per arm
+        if (typeof armData.gripper_distance === 'number') {
+          gripperDistances.value[side] = armData.gripper_distance * 1000;
         }
       }
       // Side camera (sent separately, not per-arm)
@@ -213,9 +242,9 @@ const handleMessagepackData = (arrayBuffer) => {
       }
       // Point cloud (top-level, sent at ~5Hz from left arm's wrist camera in left base frame)
       if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
-        const points = data.pointcloud;
-        pointCloudData.value = { points };
-        window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points } }));
+        const detail = splitXyzRgb(data.pointcloud);
+        pointCloudData.value = detail;
+        window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
       }
     } else {
       // ── Single-arm protocol (unchanged) ──
@@ -226,15 +255,15 @@ const handleMessagepackData = (arrayBuffer) => {
         cameraRgbUrl.value = newUrl;
       }
       if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
-        const points = data.pointcloud;
-        pointCloudData.value = { points };
-        window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points } }));
+        const detail = splitXyzRgb(data.pointcloud);
+        pointCloudData.value = detail;
+        window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
       }
       if (data.joints && Array.isArray(data.joints)) {
         updateJoints(data.joints);
       }
       if (typeof data.gripper_distance === 'number') {
-        gripperDistance.value = data.gripper_distance * 1000;
+        gripperDistances.value.left = data.gripper_distance * 1000;
       }
     }
   } catch (e) {
@@ -342,7 +371,7 @@ const updateFrameFromLocal = (frameIdx) => {
   updateJoints(jointsWithId);
 
   if (typeof metaFrame.gripper_distance === 'number') {
-    gripperDistance.value = metaFrame.gripper_distance * 1000;
+    gripperDistances.value.left = metaFrame.gripper_distance * 1000;
   }
 
   // 2. Heavy Data (Video/PC) from Buffer
@@ -363,9 +392,9 @@ const updateFrameFromLocal = (frameIdx) => {
 
     // Pointcloud
     if (heavyFrame.pointcloud) {
-      const points = heavyFrame.pointcloud;
-      pointCloudData.value = { points };
-      window.dispatchEvent(new CustomEvent('point-cloud-update', { detail: { points } }));
+      const detail = splitXyzRgb(heavyFrame.pointcloud);
+      pointCloudData.value = detail;
+      window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
     }
   } else {
     // Data not loaded yet for this frame
