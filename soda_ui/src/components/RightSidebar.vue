@@ -450,18 +450,22 @@ const generatePath = (jointIndex, side = 'left') => {
 
 .charts-container {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   overflow-y: auto;
   padding-right: 4px;
 }
 .charts-container::-webkit-scrollbar { width: 6px; }
 .charts-container::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
 
-.chart-row { margin-bottom: 16px; }
-.chart-header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.chart-row { flex: 1; min-height: 60px; display: flex; flex-direction: column; }
+.chart-header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; flex: 0 0 auto; }
 .chart-label { font-size: 12px; color: #aaa; }
 .current-value { font-size: 12px; color: #3DCDA5; font-family: 'Inter', monospace; }
 
-.chart-visual { height: 76px; position: relative; display: flex; align-items: center; }
+.chart-visual { flex: 1; min-height: 0; position: relative; display: flex; align-items: stretch; }
 .y-axis { display: flex; flex-direction: column; justify-content: space-between; height: 100%; font-size: 10px; color: #666; margin-right: 8px; }
 .waveform {
   flex: 1; height: 100%;
