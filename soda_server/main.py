@@ -5,6 +5,7 @@ import time
 from aiohttp import web, WSMsgType
 import struct
 import os
+from pathlib import Path
 import numpy as np
 from datetime import datetime
 import msgpack
@@ -21,8 +22,21 @@ HOST = "0.0.0.0"
 PORT = 8080
 VIDEO_PATH = "test_30fps.mp4"
 TARGET_FPS = 30
-URDF_PATH = "public/l6y_gp100/l6y_gp100.urdf"
-MJCF_PATH = "public/l6y_gp100/l6y_gp100.xml"
+
+# soda-bimanual: dual-arm firefly_y6 + GR100.
+# - URDF served to the frontend (3D viewer) — currently a SINGLE-arm URDF
+#   sitting in public/. To render BOTH arms in the browser you'll need either
+#   a combined dual URDF here or to instantiate two URDFLoaders in soda_ui.
+# - MJCF for the MuJoCo sim — pulled directly from hex_zmq_servers's twoArms
+#   branch (dual scene). Includes (robot_left.xml, robot_right.xml,
+#   setting_dual.xml, assets/assets.xml) resolve relative to the file path
+#   since MujocoManager chdir's into the XML's directory before loading.
+URDF_PATH = "public/firefly_y6_gr100/firefly_y6_gr100.urdf"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+MJCF_PATH = str(
+    _REPO_ROOT / "hex_zmq_servers" / "hex_zmq_servers"
+    / "mujoco" / "firefly_y6" / "model" / "scene_dual.xml"
+)
 STATIC_PATH = "public"
 POINTCLOUD_PATH = "Wheat_Alsen_F6_2023-06-30-1836_fused_output_cluster_2.npy"
 RECORDING_DIR = "recordings"
@@ -338,7 +352,11 @@ async def joint_command_handler(request):
 
 
 async def get_urdf_handler(request):
-    return web.json_response({"url": f"http://localhost:{PORT}/assets/l6y_gp100/l6y_gp100.urdf"})
+    # Derive URL from URDF_PATH (which is rooted under public/ and served by
+    # the /assets static handler). Stripping the "public/" prefix gives us
+    # the path the frontend should fetch.
+    asset_rel = URDF_PATH[len("public/"):] if URDF_PATH.startswith("public/") else URDF_PATH
+    return web.json_response({"url": f"http://localhost:{PORT}/assets/{asset_rel}"})
 
 
 async def gripper_handler(request):
