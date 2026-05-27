@@ -320,7 +320,12 @@ const fetchChunk = async (startIdx, length) => {
       if (Array.isArray(chunkData)) {
         chunkData.forEach(frame => {
           frameBuffer.value.set(frame.index, {
-            video: frame.video, // Uint8Array (bytes)
+            // `videos` is the new per-camera map produced by the
+            // dual-arm ReplayManager ({left_wrist, right_wrist, side}).
+            // `video` is kept for backwards compat with older
+            // single-camera recordings.
+            videos: frame.videos || null,
+            video: frame.video,
             pointcloud: frame.pointcloud
           });
         });
@@ -373,21 +378,43 @@ const updateFrameFromLocal = (frameIdx) => {
   if (typeof metaFrame.gripper_distance === 'number') {
     gripperDistances.value.left = metaFrame.gripper_distance * 1000;
   }
+  if (typeof metaFrame.gripper_distance_right === 'number') {
+    gripperDistances.value.right = metaFrame.gripper_distance_right * 1000;
+  }
 
   // 2. Heavy Data (Video/PC) from Buffer
   const heavyFrame = frameBuffer.value.get(frameIdx);
   if (heavyFrame) {
-    // Video
-    if (heavyFrame.video) {
-      // Create blob from bytes
+    // Per-camera videos (left/right wrist + side). The cam_key →
+    // panel key mapping is the same on both ends: "left_wrist" feeds
+    // the left CameraPanel, etc.
+    const camKeyToPanel = {
+      left_wrist: 'left',
+      right_wrist: 'right',
+      side: 'side',
+    };
+    if (heavyFrame.videos) {
+      for (const [camKey, bytes] of Object.entries(heavyFrame.videos)) {
+        const panel = camKeyToPanel[camKey];
+        if (!panel || !bytes) continue;
+        const blob = new Blob([bytes], { type: 'image/jpeg' });
+        const newUrl = URL.createObjectURL(blob);
+        const prev = cameraRgbUrls.value[panel];
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        cameraRgbUrls.value[panel] = newUrl;
+      }
+    } else if (heavyFrame.video) {
+      // Legacy single-camera recording — feed the left panel only.
       const blob = new Blob([heavyFrame.video], { type: 'image/jpeg' });
       const src = URL.createObjectURL(blob);
+      const prev = cameraRgbUrls.value.left;
+      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      cameraRgbUrls.value.left = src;
+      // Keep the old single-camera ref in sync for the non-dual layout.
       if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
         URL.revokeObjectURL(cameraRgbUrl.value);
       }
       cameraRgbUrl.value = src;
-    } else {
-      // Optional: clear video if frame has none, or keep last
     }
 
     // Pointcloud
@@ -498,6 +525,10 @@ onUnmounted(() => {
   if (socket) socket.close();
   if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(cameraRgbUrl.value);
+  }
+  for (const key of ['left', 'right', 'side']) {
+    const url = cameraRgbUrls.value[key];
+    if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
   }
   pointCloudData.value = null;
 });
