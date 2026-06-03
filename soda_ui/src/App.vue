@@ -166,11 +166,7 @@ const initWebSocket = () => {
   window.sendGripperSet = sendGripperSet;
 
   socket.onmessage = (event) => {
-    // In replay mode the backend streams the recorded joints (same per-arm
-    // format as realtime) while it drives the sim/real arm, so we render the
-    // WS frames in BOTH modes. Heavy data (camera/pointcloud) for replay is
-    // pulled from the chunk buffer, keyed on the replay frame the backend
-    // reports in `data.replay`.
+    if (currentMode.value === 'replay') return;
     const data = event.data;
     if (data instanceof ArrayBuffer) {
       handleMessagepackData(data);
@@ -284,7 +280,7 @@ const handleModeChange = (newMode) => {
   if (newMode === 'replay') {
     fetchTrajectory();
   } else {
-    stopStatusPolling();
+    stopPlayback();
   }
 };
 
@@ -387,118 +383,122 @@ const updateFrameFromLocal = (frameIdx) => {
   }
 
   // 2. Heavy Data (Video/PC) from Buffer
-  updateReplayHeavyData(frameIdx);
-};
-
-// Pull recorded camera frames + point cloud for a replay frame from the
-// chunk buffer. Used both by the (legacy) client-side scrubber and by the
-// WS-driven replay path (joints come from the backend WS broadcast).
-const updateReplayHeavyData = (frameIdx) => {
   const heavyFrame = frameBuffer.value.get(frameIdx);
-  if (!heavyFrame) return;
-  // Per-camera videos (left/right wrist + side).
-  const camKeyToPanel = { left_wrist: 'left', right_wrist: 'right', side: 'side' };
-  if (heavyFrame.videos) {
-    for (const [camKey, bytes] of Object.entries(heavyFrame.videos)) {
-      const panel = camKeyToPanel[camKey];
-      if (!panel || !bytes) continue;
-      const blob = new Blob([bytes], { type: 'image/jpeg' });
-      const newUrl = URL.createObjectURL(blob);
-      const prev = cameraRgbUrls.value[panel];
+  if (heavyFrame) {
+    // Per-camera videos (left/right wrist + side). The cam_key →
+    // panel key mapping is the same on both ends: "left_wrist" feeds
+    // the left CameraPanel, etc.
+    const camKeyToPanel = {
+      left_wrist: 'left',
+      right_wrist: 'right',
+      side: 'side',
+    };
+    if (heavyFrame.videos) {
+      for (const [camKey, bytes] of Object.entries(heavyFrame.videos)) {
+        const panel = camKeyToPanel[camKey];
+        if (!panel || !bytes) continue;
+        const blob = new Blob([bytes], { type: 'image/jpeg' });
+        const newUrl = URL.createObjectURL(blob);
+        const prev = cameraRgbUrls.value[panel];
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        cameraRgbUrls.value[panel] = newUrl;
+      }
+    } else if (heavyFrame.video) {
+      // Legacy single-camera recording — feed the left panel only.
+      const blob = new Blob([heavyFrame.video], { type: 'image/jpeg' });
+      const src = URL.createObjectURL(blob);
+      const prev = cameraRgbUrls.value.left;
       if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-      cameraRgbUrls.value[panel] = newUrl;
+      cameraRgbUrls.value.left = src;
+      // Keep the old single-camera ref in sync for the non-dual layout.
+      if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
+        URL.revokeObjectURL(cameraRgbUrl.value);
+      }
+      cameraRgbUrl.value = src;
     }
-  } else if (heavyFrame.video) {
-    const blob = new Blob([heavyFrame.video], { type: 'image/jpeg' });
-    const src = URL.createObjectURL(blob);
-    const prev = cameraRgbUrls.value.left;
-    if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-    cameraRgbUrls.value.left = src;
-    if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
-      URL.revokeObjectURL(cameraRgbUrl.value);
+
+    // Pointcloud
+    if (heavyFrame.pointcloud) {
+      const detail = splitXyzRgb(heavyFrame.pointcloud);
+      pointCloudData.value = detail;
+      window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
     }
-    cameraRgbUrl.value = src;
-  }
-  if (heavyFrame.pointcloud) {
-    const detail = splitXyzRgb(heavyFrame.pointcloud);
-    pointCloudData.value = detail;
-    window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
+  } else {
+    // Data not loaded yet for this frame
+    // Ideally show a loading spinner or keep last frame
+    // For now, we just rely on joint updates which are instant
   }
 };
 
-// Replay is BACKEND-DRIVEN: a backend task advances frames and commands the
-// sim/real arm via set_cmds, so the arm physically moves and the LIVE WS
-// state stream (rendered by handleMessagepackData, same path as realtime)
-// shows the motion in 3D + cameras. The frontend just sends control intents
-// and polls /api/replay/status to keep the timeline slider in sync.
-const driveBackendReplay = async (action, frame = null) => {
-  try {
-    await fetch('http://localhost:8080/api/replay/control', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(frame === null ? { action } : { action, frame }),
-    });
-  } catch (e) {
-    console.error('replay control failed:', action, e);
+const startPlayback = () => {
+  if (playbackInterval) return;
+  
+  // If we are at the end, restart from 0
+  if (replayCurrentFrame.value >= replayTotalFrames.value - 1) {
+    replayCurrentFrame.value = 0;
+    updateFrameFromLocal(0);
   }
+
+  isPlaying.value = true;
+  playbackInterval = setInterval(() => {
+    const nextFrame = replayCurrentFrame.value + 1;
+    if (nextFrame >= replayTotalFrames.value) {
+      stopPlayback(); // Stop at end
+      return;
+    }
+    replayCurrentFrame.value = nextFrame;
+    updateFrameFromLocal(nextFrame);
+    ensureDataBuffered(nextFrame);
+  }, 1000 / TARGET_FPS);
 };
 
-// Poll backend playback head so the timeline + play/pause icon follow.
-const startStatusPolling = () => {
-  if (playbackInterval) clearInterval(playbackInterval);
-  playbackInterval = setInterval(async () => {
-    try {
-      const r = await fetch('http://localhost:8080/api/replay/status');
-      if (!r.ok) return;
-      const s = await r.json();
-      if (typeof s.current_frame === 'number') replayCurrentFrame.value = s.current_frame;
-      if (typeof s.is_playing === 'boolean') isPlaying.value = s.is_playing;
-      if (!s.is_playing) stopStatusPolling();
-    } catch { /* ignore */ }
-  }, 150);
-};
-
-const stopStatusPolling = () => {
+const stopPlayback = () => {
   if (playbackInterval) {
     clearInterval(playbackInterval);
     playbackInterval = null;
   }
+  isPlaying.value = false;
 };
 
 const handleReplayControl = (action) => {
-  if (replayTotalFrames.value === 0) return;
+  if (!localTrajectory.value) return;
 
   if (action === 'play') {
-    isPlaying.value = true;
-    // Sync backend to the current frame, then play: backend smoothly
-    // approaches that frame and streams joint commands to the arm.
-    driveBackendReplay('seek', replayCurrentFrame.value)
-      .then(() => driveBackendReplay('play'))
-      .then(() => startStatusPolling());
+    startPlayback();
   } else if (action === 'pause') {
-    stopStatusPolling();
-    isPlaying.value = false;
-    driveBackendReplay('pause');
+    stopPlayback();
   } else if (action === 'step_forward') {
-    stopStatusPolling();
+    stopPlayback();
     let next = replayCurrentFrame.value + 1;
     if (next >= replayTotalFrames.value) next = replayTotalFrames.value - 1;
     replayCurrentFrame.value = next;
-    driveBackendReplay('seek', next);
+    updateFrameFromLocal(next);
+    ensureDataBuffered(next);
   } else if (action === 'step_backward') {
-    stopStatusPolling();
+    stopPlayback();
     let prev = replayCurrentFrame.value - 1;
     if (prev < 0) prev = 0;
     replayCurrentFrame.value = prev;
-    driveBackendReplay('seek', prev);
+    updateFrameFromLocal(prev);
+    // Backward seeking might require fetching previous chunks if we only buffer forward
+    // For simplicity, we assume user plays forward mainly. 
+    // If we want random access, seek logic handles it.
   }
 };
 
 const handleSeek = (frameIdx) => {
-  stopStatusPolling();
-  isPlaying.value = false;
+  stopPlayback();
   replayCurrentFrame.value = frameIdx;
-  driveBackendReplay('seek', frameIdx);
+  
+  // Check if frame is buffered
+  if (!frameBuffer.value.has(frameIdx)) {
+    // If not buffered, force fetch chunk around this frame
+    // We fetch starting from frameIdx
+    loadedUpToFrame.value = frameIdx; // Reset head
+    fetchChunk(frameIdx, CHUNK_SIZE);
+  }
+  
+  updateFrameFromLocal(frameIdx);
 };
 
 onMounted(async () => {
@@ -521,7 +521,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  stopStatusPolling();
+  stopPlayback();
   if (socket) socket.close();
   if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(cameraRgbUrl.value);
