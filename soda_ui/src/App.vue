@@ -166,7 +166,11 @@ const initWebSocket = () => {
   window.sendGripperSet = sendGripperSet;
 
   socket.onmessage = (event) => {
-    if (currentMode.value === 'replay') return;
+    // In replay mode the backend streams the recorded joints (same per-arm
+    // format as realtime) while it drives the sim/real arm, so we render the
+    // WS frames in BOTH modes. Heavy data (camera/pointcloud) for replay is
+    // pulled from the chunk buffer, keyed on the replay frame the backend
+    // reports in `data.replay`.
     const data = event.data;
     if (data instanceof ArrayBuffer) {
       handleMessagepackData(data);
@@ -245,6 +249,18 @@ const handleMessagepackData = (arrayBuffer) => {
         const detail = splitXyzRgb(data.pointcloud);
         pointCloudData.value = detail;
         window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
+      }
+      // Replay sync: backend reports the current replay frame while it drives
+      // the arm. Follow it for the timeline + pull recorded camera/pointcloud
+      // from the chunk buffer (joints already rendered above from arms.*).
+      if (data.replay) {
+        if (typeof data.replay.total === 'number') replayTotalFrames.value = data.replay.total;
+        if (typeof data.replay.frame === 'number') {
+          replayCurrentFrame.value = data.replay.frame;
+          updateReplayHeavyData(data.replay.frame);
+          ensureDataBuffered(data.replay.frame);
+        }
+        if (typeof data.replay.is_playing === 'boolean') isPlaying.value = data.replay.is_playing;
       }
     } else {
       // ── Single-arm protocol (unchanged) ──
@@ -383,50 +399,42 @@ const updateFrameFromLocal = (frameIdx) => {
   }
 
   // 2. Heavy Data (Video/PC) from Buffer
-  const heavyFrame = frameBuffer.value.get(frameIdx);
-  if (heavyFrame) {
-    // Per-camera videos (left/right wrist + side). The cam_key →
-    // panel key mapping is the same on both ends: "left_wrist" feeds
-    // the left CameraPanel, etc.
-    const camKeyToPanel = {
-      left_wrist: 'left',
-      right_wrist: 'right',
-      side: 'side',
-    };
-    if (heavyFrame.videos) {
-      for (const [camKey, bytes] of Object.entries(heavyFrame.videos)) {
-        const panel = camKeyToPanel[camKey];
-        if (!panel || !bytes) continue;
-        const blob = new Blob([bytes], { type: 'image/jpeg' });
-        const newUrl = URL.createObjectURL(blob);
-        const prev = cameraRgbUrls.value[panel];
-        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-        cameraRgbUrls.value[panel] = newUrl;
-      }
-    } else if (heavyFrame.video) {
-      // Legacy single-camera recording — feed the left panel only.
-      const blob = new Blob([heavyFrame.video], { type: 'image/jpeg' });
-      const src = URL.createObjectURL(blob);
-      const prev = cameraRgbUrls.value.left;
-      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-      cameraRgbUrls.value.left = src;
-      // Keep the old single-camera ref in sync for the non-dual layout.
-      if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
-        URL.revokeObjectURL(cameraRgbUrl.value);
-      }
-      cameraRgbUrl.value = src;
-    }
+  updateReplayHeavyData(frameIdx);
+};
 
-    // Pointcloud
-    if (heavyFrame.pointcloud) {
-      const detail = splitXyzRgb(heavyFrame.pointcloud);
-      pointCloudData.value = detail;
-      window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
+// Pull recorded camera frames + point cloud for a replay frame from the
+// chunk buffer. Used both by the (legacy) client-side scrubber and by the
+// WS-driven replay path (joints come from the backend WS broadcast).
+const updateReplayHeavyData = (frameIdx) => {
+  const heavyFrame = frameBuffer.value.get(frameIdx);
+  if (!heavyFrame) return;
+  // Per-camera videos (left/right wrist + side).
+  const camKeyToPanel = { left_wrist: 'left', right_wrist: 'right', side: 'side' };
+  if (heavyFrame.videos) {
+    for (const [camKey, bytes] of Object.entries(heavyFrame.videos)) {
+      const panel = camKeyToPanel[camKey];
+      if (!panel || !bytes) continue;
+      const blob = new Blob([bytes], { type: 'image/jpeg' });
+      const newUrl = URL.createObjectURL(blob);
+      const prev = cameraRgbUrls.value[panel];
+      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      cameraRgbUrls.value[panel] = newUrl;
     }
-  } else {
-    // Data not loaded yet for this frame
-    // Ideally show a loading spinner or keep last frame
-    // For now, we just rely on joint updates which are instant
+  } else if (heavyFrame.video) {
+    const blob = new Blob([heavyFrame.video], { type: 'image/jpeg' });
+    const src = URL.createObjectURL(blob);
+    const prev = cameraRgbUrls.value.left;
+    if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+    cameraRgbUrls.value.left = src;
+    if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
+      URL.revokeObjectURL(cameraRgbUrl.value);
+    }
+    cameraRgbUrl.value = src;
+  }
+  if (heavyFrame.pointcloud) {
+    const detail = splitXyzRgb(heavyFrame.pointcloud);
+    pointCloudData.value = detail;
+    window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
   }
 };
 
@@ -460,10 +468,11 @@ const stopPlayback = () => {
   isPlaying.value = false;
 };
 
-// Drive the BACKEND replay so the real/sim arm actually follows playback.
-// The 3D view is still animated client-side from localTrajectory; this adds
-// the robot motion. `seek` keeps the backend playback head aligned with the
-// UI frame so `play` starts the arm from the frame the user is looking at.
+// Replay is BACKEND-DRIVEN: the backend advances frames, commands the
+// sim/real arm via set_cmds, and broadcasts each frame's joints over the WS
+// (rendered by handleMessagepackData → updateJoints, the same path realtime
+// uses). The frontend only sends control intents here; it no longer animates
+// joints client-side (that path had a joint-name mismatch and never worked).
 const driveBackendReplay = async (action, frame = null) => {
   try {
     await fetch('http://localhost:8080/api/replay/control', {
@@ -477,51 +486,34 @@ const driveBackendReplay = async (action, frame = null) => {
 };
 
 const handleReplayControl = (action) => {
-  if (!localTrajectory.value) return;
+  if (replayTotalFrames.value === 0) return;
 
   if (action === 'play') {
-    startPlayback();
     // Sync backend to the current frame, then play: backend smoothly
     // approaches that frame and streams joint commands to the arm.
     driveBackendReplay('seek', replayCurrentFrame.value)
       .then(() => driveBackendReplay('play'));
   } else if (action === 'pause') {
-    stopPlayback();
     driveBackendReplay('pause');
   } else if (action === 'step_forward') {
-    stopPlayback();
     let next = replayCurrentFrame.value + 1;
     if (next >= replayTotalFrames.value) next = replayTotalFrames.value - 1;
-    replayCurrentFrame.value = next;
-    updateFrameFromLocal(next);
     ensureDataBuffered(next);
-    driveBackendReplay('seek', next);
+    driveBackendReplay('seek', next);  // WS echoes the new frame → 3D + camera update
   } else if (action === 'step_backward') {
-    stopPlayback();
     let prev = replayCurrentFrame.value - 1;
     if (prev < 0) prev = 0;
-    replayCurrentFrame.value = prev;
-    updateFrameFromLocal(prev);
     driveBackendReplay('seek', prev);
-    // Backward seeking might require fetching previous chunks if we only buffer forward
-    // For simplicity, we assume user plays forward mainly.
-    // If we want random access, seek logic handles it.
   }
 };
 
 const handleSeek = (frameIdx) => {
-  stopPlayback();
-  replayCurrentFrame.value = frameIdx;
-
-  // Check if frame is buffered
+  // Ensure camera/pointcloud for the target frame is (being) fetched; joints
+  // come back over the WS once the backend seeks.
   if (!frameBuffer.value.has(frameIdx)) {
-    // If not buffered, force fetch chunk around this frame
-    // We fetch starting from frameIdx
-    loadedUpToFrame.value = frameIdx; // Reset head
+    loadedUpToFrame.value = frameIdx;
     fetchChunk(frameIdx, CHUNK_SIZE);
   }
-
-  updateFrameFromLocal(frameIdx);
   driveBackendReplay('seek', frameIdx);
 };
 
