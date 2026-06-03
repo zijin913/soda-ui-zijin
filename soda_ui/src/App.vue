@@ -460,13 +460,34 @@ const stopPlayback = () => {
   isPlaying.value = false;
 };
 
+// Drive the BACKEND replay so the real/sim arm actually follows playback.
+// The 3D view is still animated client-side from localTrajectory; this adds
+// the robot motion. `seek` keeps the backend playback head aligned with the
+// UI frame so `play` starts the arm from the frame the user is looking at.
+const driveBackendReplay = async (action, frame = null) => {
+  try {
+    await fetch('http://localhost:8080/api/replay/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(frame === null ? { action } : { action, frame }),
+    });
+  } catch (e) {
+    console.error('replay control failed:', action, e);
+  }
+};
+
 const handleReplayControl = (action) => {
   if (!localTrajectory.value) return;
 
   if (action === 'play') {
     startPlayback();
+    // Sync backend to the current frame, then play: backend smoothly
+    // approaches that frame and streams joint commands to the arm.
+    driveBackendReplay('seek', replayCurrentFrame.value)
+      .then(() => driveBackendReplay('play'));
   } else if (action === 'pause') {
     stopPlayback();
+    driveBackendReplay('pause');
   } else if (action === 'step_forward') {
     stopPlayback();
     let next = replayCurrentFrame.value + 1;
@@ -474,14 +495,16 @@ const handleReplayControl = (action) => {
     replayCurrentFrame.value = next;
     updateFrameFromLocal(next);
     ensureDataBuffered(next);
+    driveBackendReplay('seek', next);
   } else if (action === 'step_backward') {
     stopPlayback();
     let prev = replayCurrentFrame.value - 1;
     if (prev < 0) prev = 0;
     replayCurrentFrame.value = prev;
     updateFrameFromLocal(prev);
+    driveBackendReplay('seek', prev);
     // Backward seeking might require fetching previous chunks if we only buffer forward
-    // For simplicity, we assume user plays forward mainly. 
+    // For simplicity, we assume user plays forward mainly.
     // If we want random access, seek logic handles it.
   }
 };
@@ -489,7 +512,7 @@ const handleReplayControl = (action) => {
 const handleSeek = (frameIdx) => {
   stopPlayback();
   replayCurrentFrame.value = frameIdx;
-  
+
   // Check if frame is buffered
   if (!frameBuffer.value.has(frameIdx)) {
     // If not buffered, force fetch chunk around this frame
@@ -497,8 +520,9 @@ const handleSeek = (frameIdx) => {
     loadedUpToFrame.value = frameIdx; // Reset head
     fetchChunk(frameIdx, CHUNK_SIZE);
   }
-  
+
   updateFrameFromLocal(frameIdx);
+  driveBackendReplay('seek', frameIdx);
 };
 
 onMounted(async () => {
