@@ -470,14 +470,14 @@ const onWheel = (event) => {
 
   const degreesPerScroll = 1;
   const angleDelta = (event.deltaY / 100) * degreesPerScroll * (Math.PI / 180);
-  
+
   console.log('onWheel debug:', {
     joint: draggingJoint.urdfName,
     angleDelta,
     initialJointAngle,
     limit: draggingJoint.limit
   });
-  
+
   // Use current initial angle (which tracks the latest local state)
   const potentialNewAngle = initialJointAngle - angleDelta;
   let clampedAngle = potentialNewAngle;
@@ -489,7 +489,7 @@ const onWheel = (event) => {
 
   // Determine actual change allowed
   const actualChange = clampedAngle - initialJointAngle;
-  
+
   console.log('Clamping check:', {
     potentialNewAngle,
     clampedAngle,
@@ -502,7 +502,7 @@ const onWheel = (event) => {
     // i.e., angleDelta is pushing further in the direction of the limit
     const isPushingLower = angleDelta > 0 && draggingJoint.limit && Math.abs(initialJointAngle - draggingJoint.limit.lower) < 1e-4;
     const isPushingUpper = angleDelta < 0 && draggingJoint.limit && Math.abs(initialJointAngle - draggingJoint.limit.upper) < 1e-4;
-    
+
     console.log('Pushing limit check:', {
         isPushingLower,
         isPushingUpper,

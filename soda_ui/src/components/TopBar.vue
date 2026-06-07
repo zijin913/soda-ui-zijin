@@ -16,9 +16,13 @@
           <span class="mode-label">RP</span>
         </button>
 
-        <!-- Record (only in realtime mode) -->
-        <button v-if="mode === 'realtime'" class="tool-btn" :class="{ 'active': isRecording }" @click="toggleRecord">
-          <div class="record-dot" :class="{ 'recording': isRecording }"></div>
+        <!-- Teleop (only in realtime mode) — launches scripts/teleop_quest.py
+             via the backend. The OpenCV camera window + "Record this teleop?"
+             prompt appear on the backend host's display. -->
+        <button v-if="mode === 'realtime'" class="tool-btn teleop-btn" :class="{ 'active': isTeleopRunning }"
+                @click="toggleTeleop"
+                :title="isTeleopRunning ? '停止 teleop' : '启动 teleop(是否录制会在弹出的相机窗口中询问)'">
+          <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
         </button>
 
         <!-- Recordings Dropdown (only in replay mode) -->
@@ -84,7 +88,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import LogoIcon from '@/components/icons/LogoIcon.vue';
 import HandToolIcon from '@/components/icons/HandToolIcon.vue';
 import MoveToolIcon from '@/components/icons/MoveToolIcon.vue';
@@ -98,13 +102,14 @@ const props = defineProps({
   modelValue: { type: String, default: 'hand' }
 });
 
-const emit = defineEmits(['update:modelValue', 'toggleDepth', 'toggleRecord', 'modeChanged', 'replayControl']);
+const emit = defineEmits(['update:modelValue', 'toggleDepth', 'teleopToggled', 'modeChanged', 'replayControl']);
 
 const currentTool = ref(props.modelValue);
 const isDropdownOpen = ref(false);
 const isCoordinateActive = ref(false);
 const isDepthActive = ref(false);
-const isRecording = ref(false);
+const isTeleopRunning = ref(false);       // teleop subprocess running on the backend host
+let teleopStatusTimer = null;
 const recordingFiles = ref([]);
 const selectedRecording = ref('');
 const mode = ref('realtime');
@@ -128,26 +133,36 @@ const toggleDepth = () => {
   emit('toggleDepth', isDepthActive.value);
 };
 
-const toggleRecord = async () => {
-  isRecording.value = !isRecording.value;
-  const action = isRecording.value ? 'start' : 'stop';
+// Start/stop teleop. The backend spawns scripts/teleop_quest.py --windowed
+// (OpenCV camera + "Record this teleop?" prompt render on the backend host).
+const toggleTeleop = async () => {
+  const path = isTeleopRunning.value ? '/api/teleop/stop' : '/api/teleop/start';
   try {
-    const response = await fetch('http://localhost:8080/api/record', {
+    const response = await fetch(`http://localhost:8080${path}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ action })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
     });
     if (response.ok) {
-      emit('toggleRecord', isRecording.value);
-      await fetchRecordings();
-    } else {
-      isRecording.value = !isRecording.value; // Revert on failure
+      await fetchTeleopStatus();
+      emit('teleopToggled', isTeleopRunning.value);
     }
   } catch (error) {
-    console.error('Failed to toggle recording:', error);
-    isRecording.value = !isRecording.value; // Revert on error
+    console.error('Failed to toggle teleop:', error);
+  }
+};
+
+// Poll teleop status so the button reflects reality (teleop can also exit
+// itself via the 'q' key in its OpenCV window).
+const fetchTeleopStatus = async () => {
+  try {
+    const response = await fetch('http://localhost:8080/api/teleop/status');
+    if (response.ok) {
+      const data = await response.json();
+      isTeleopRunning.value = !!data.running;
+    }
+  } catch (error) {
+    // backend not up yet — leave state as-is
   }
 };
 
@@ -228,6 +243,12 @@ const replayControl = async (action) => {
 
 onMounted(() => {
   fetchRecordings();
+  fetchTeleopStatus();
+  teleopStatusTimer = setInterval(fetchTeleopStatus, 2000);
+});
+
+onUnmounted(() => {
+  if (teleopStatusTimer) clearInterval(teleopStatusTimer);
 });
 </script>
 
@@ -303,28 +324,6 @@ onMounted(() => {
   position: relative;
 }
 
-
-.record-dot {
-  width: 24px;
-  height: 24px;
-  background: #F44336;
-  border-radius: 50%;
-  border: 4px solid #fff;
-  transition: all 0.3s;
-}
-
-.record-dot.recording {
-  animation: pulse 1s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
 
 .mouse-tool-dropdown {
   position: absolute;
@@ -413,6 +412,21 @@ onMounted(() => {
 
 .mode-label.active {
   color: white;
+}
+
+.teleop-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #888;
+  letter-spacing: 0.5px;
+}
+
+.teleop-label.running {
+  color: #4caf50;
+}
+
+.teleop-btn.active {
+  background: #1f3a23;
 }
 
 .replay-controls {

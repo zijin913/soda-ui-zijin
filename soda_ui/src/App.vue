@@ -5,8 +5,8 @@
       <!-- 1. Top Navigation -->
       <TopBar 
         v-model="currentMouseTool" 
-        @toggleDepth="showPointCloud = $event" 
-        @toggleRecord="handleRecordToggle" 
+        @toggleDepth="showPointCloud = $event"
+        @teleopToggled="handleTeleopToggle"
         @modeChanged="handleModeChange"
         @recordingLoaded="fetchTrajectory" 
       />
@@ -166,7 +166,8 @@ const initWebSocket = () => {
   window.sendGripperSet = sendGripperSet;
 
   socket.onmessage = (event) => {
-    if (currentMode.value === 'replay') return;
+    // Render live state in BOTH modes — during replay the backend physically
+    // moves the arm, so the live /ws stream carries the replay motion.
     const data = event.data;
     if (data instanceof ArrayBuffer) {
       handleMessagepackData(data);
@@ -271,8 +272,8 @@ const handleMessagepackData = (arrayBuffer) => {
   }
 };
 
-const handleRecordToggle = (isRecording) => {
-  console.log('Recording:', isRecording ? 'started' : 'stopped');
+const handleTeleopToggle = (isRunning) => {
+  console.log('Teleop:', isRunning ? 'started' : 'stopped');
 };
 
 const handleModeChange = (newMode) => {
@@ -280,7 +281,7 @@ const handleModeChange = (newMode) => {
   if (newMode === 'replay') {
     fetchTrajectory();
   } else {
-    stopPlayback();
+    stopStatusPolling();
   }
 };
 
@@ -430,75 +431,78 @@ const updateFrameFromLocal = (frameIdx) => {
   }
 };
 
-const startPlayback = () => {
-  if (playbackInterval) return;
-  
-  // If we are at the end, restart from 0
-  if (replayCurrentFrame.value >= replayTotalFrames.value - 1) {
-    replayCurrentFrame.value = 0;
-    updateFrameFromLocal(0);
+// Replay is BACKEND-DRIVEN: a backend task advances frames and commands the
+// sim/real arm via set_cmds, so the arm physically moves and the live /ws
+// state stream (rendered like realtime) shows it in 3D + cameras. The
+// frontend just sends control intents and polls /api/replay/status to keep
+// the timeline + play/pause icon in sync. (The old client-side joint
+// animation never moved the 3D — recorded joint names didn't match the
+// realtime ones — so it's removed.)
+const driveBackendReplay = async (action, frame = null) => {
+  try {
+    await fetch('http://localhost:8080/api/replay/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(frame === null ? { action } : { action, frame }),
+    });
+  } catch (e) {
+    console.error('replay control failed:', action, e);
   }
-
-  isPlaying.value = true;
-  playbackInterval = setInterval(() => {
-    const nextFrame = replayCurrentFrame.value + 1;
-    if (nextFrame >= replayTotalFrames.value) {
-      stopPlayback(); // Stop at end
-      return;
-    }
-    replayCurrentFrame.value = nextFrame;
-    updateFrameFromLocal(nextFrame);
-    ensureDataBuffered(nextFrame);
-  }, 1000 / TARGET_FPS);
 };
 
-const stopPlayback = () => {
+const startStatusPolling = () => {
+  if (playbackInterval) clearInterval(playbackInterval);
+  playbackInterval = setInterval(async () => {
+    try {
+      const r = await fetch('http://localhost:8080/api/replay/status');
+      if (!r.ok) return;
+      const st = await r.json();
+      if (typeof st.current_frame === 'number') replayCurrentFrame.value = st.current_frame;
+      if (typeof st.is_playing === 'boolean') isPlaying.value = st.is_playing;
+      if (!st.is_playing) stopStatusPolling();
+    } catch { /* ignore */ }
+  }, 150);
+};
+
+const stopStatusPolling = () => {
   if (playbackInterval) {
     clearInterval(playbackInterval);
     playbackInterval = null;
   }
-  isPlaying.value = false;
 };
 
 const handleReplayControl = (action) => {
-  if (!localTrajectory.value) return;
+  if (replayTotalFrames.value === 0) return;
 
   if (action === 'play') {
-    startPlayback();
+    isPlaying.value = true;
+    driveBackendReplay('seek', replayCurrentFrame.value)
+      .then(() => driveBackendReplay('play'))
+      .then(() => startStatusPolling());
   } else if (action === 'pause') {
-    stopPlayback();
+    stopStatusPolling();
+    isPlaying.value = false;
+    driveBackendReplay('pause');
   } else if (action === 'step_forward') {
-    stopPlayback();
+    stopStatusPolling();
     let next = replayCurrentFrame.value + 1;
     if (next >= replayTotalFrames.value) next = replayTotalFrames.value - 1;
     replayCurrentFrame.value = next;
-    updateFrameFromLocal(next);
-    ensureDataBuffered(next);
+    driveBackendReplay('seek', next);
   } else if (action === 'step_backward') {
-    stopPlayback();
+    stopStatusPolling();
     let prev = replayCurrentFrame.value - 1;
     if (prev < 0) prev = 0;
     replayCurrentFrame.value = prev;
-    updateFrameFromLocal(prev);
-    // Backward seeking might require fetching previous chunks if we only buffer forward
-    // For simplicity, we assume user plays forward mainly. 
-    // If we want random access, seek logic handles it.
+    driveBackendReplay('seek', prev);
   }
 };
 
 const handleSeek = (frameIdx) => {
-  stopPlayback();
+  stopStatusPolling();
+  isPlaying.value = false;
   replayCurrentFrame.value = frameIdx;
-  
-  // Check if frame is buffered
-  if (!frameBuffer.value.has(frameIdx)) {
-    // If not buffered, force fetch chunk around this frame
-    // We fetch starting from frameIdx
-    loadedUpToFrame.value = frameIdx; // Reset head
-    fetchChunk(frameIdx, CHUNK_SIZE);
-  }
-  
-  updateFrameFromLocal(frameIdx);
+  driveBackendReplay('seek', frameIdx);
 };
 
 onMounted(async () => {
@@ -521,7 +525,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  stopPlayback();
+  stopStatusPolling();
   if (socket) socket.close();
   if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(cameraRgbUrl.value);
