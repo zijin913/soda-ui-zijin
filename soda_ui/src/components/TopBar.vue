@@ -25,6 +25,14 @@
           <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
         </button>
 
+        <!-- STOP / Recovery — kill EVERYTHING and start zero-gravity so the
+             operator can hand-pose the arms back to home. A popup appears on
+             the robot host (the UI goes dark once the backend is killed). -->
+        <button class="tool-btn stop-btn" @click="shutdownAll"
+                title="停止所有进程并进入 zero-gravity(手动摆正机械臂);之后在弹窗里按 q/ESC 退出">
+          <span class="stop-label">STOP</span>
+        </button>
+
         <!-- Recordings Dropdown (only in replay mode) -->
         <div v-if="mode === 'replay'" class="recordings-dropdown-wrapper">
           <select v-model="selectedRecording" @change="loadRecording" class="recordings-select">
@@ -150,6 +158,28 @@ const toggleTeleop = async () => {
   } catch (error) {
     console.error('Failed to toggle teleop:', error);
   }
+};
+
+// STOP / Recovery: kill everything + start zero-gravity for hand-posing.
+// Destructive — confirm first. The backend spawns a detached helper that
+// survives its own death and shows a popup on the robot host.
+const shutdownAll = async () => {
+  const ok = window.confirm(
+    '停止所有进程并进入 zero-gravity?\n\n' +
+    '机械臂会变为可自由摆动(重力补偿)。停止后界面会失效,\n' +
+    '请到机器人主机的弹窗里:摆正机械臂后按 q / ESC 退出整个程序。');
+  if (!ok) return;
+  try {
+    await fetch('http://localhost:8080/api/shutdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  } catch (error) {
+    // backend is being killed — losing the connection is expected.
+  }
+  window.alert('正在停止所有进程并启动 zero-gravity。\n' +
+               '请到机器人主机的弹窗操作:摆正机械臂后按 q / ESC 退出。');
 };
 
 // Poll teleop status so the button reflects reality (teleop can also exit
@@ -427,6 +457,17 @@ onUnmounted(() => {
 
 .teleop-btn.active {
   background: #1f3a23;
+}
+
+.stop-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #f44336;
+  letter-spacing: 0.5px;
+}
+
+.stop-btn:hover {
+  background: #3a1f1f;
 }
 
 .replay-controls {
