@@ -287,6 +287,12 @@ const handleModeChange = (newMode) => {
 
 const fetchTrajectory = async () => {
   try {
+    // Skip until a recording is actually loaded — avoids a 400 on a bare
+    // mode-switch to replay before an episode is selected. /api/replay/status
+    // returns {is_loaded:false} with a clean 200, so nothing is logged.
+    const st = await fetch('http://localhost:8080/api/replay/status');
+    if (st.ok && !(await st.json()).is_loaded) return;
+
     const response = await fetch('http://localhost:8080/api/replay/trajectory');
     if (response.ok) {
       const data = await response.json();
