@@ -1,6 +1,6 @@
 <template>
   <div class="robot-stage-3d" ref="canvasContainer">
-    <!-- 装饰性的底层光效 -->
+    <!-- Decorative background glow -->
     <div class="glow-overlay"></div>
 
     <!-- Limit Toast -->
@@ -70,7 +70,6 @@ const triggerLimitToast = (message) => {
   }, 1500);
 };
 
-// Three.js Logic (保持原有的大部分代码，略微精简)
 const initScene = () => {
   scene = new THREE.Scene();
   scene.background = null;
@@ -511,9 +510,9 @@ const onWheel = (event) => {
     });
 
     if (isPushingLower) {
-        triggerLimitToast('当前关节已达最小值');
+        triggerLimitToast('Joint at minimum limit');
     } else if (isPushingUpper) {
-        triggerLimitToast('当前关节已达最大值');
+        triggerLimitToast('Joint at maximum limit');
     }
   }
 
@@ -539,17 +538,14 @@ const onPointerUp = () => {
   }
 };
 
-// --- 辅助功能 (保持之前的修复版本) ---
+// --- Helper functions ---
 
 const highlightLink = (linkObject) => {
-  // 1. 先清除之前的高亮
   resetHighlight();
 
-  // 2. 定义一个递归函数，专门控制遍历深度
   const traverseVisualsOnly = (object) => {
-    // A. 处理当前的 Mesh
     if (object.isMesh && !object.isCustomHelper) {
-      // 检查材质是否支持发光
+      // Only emissive-capable materials can glow
       if (object.material && object.material.emissive) {
         const newMaterial = object.material.clone();
         newMaterial.emissive.setHex(0x1A5E4A);
@@ -560,24 +556,24 @@ const highlightLink = (linkObject) => {
       }
     }
 
-    // B. 继续遍历子节点，但要设置“路障”
+    // Recurse into children, but stop at part boundaries.
     if (object.children) {
       for (const child of object.children) {
-        // === 关键逻辑 ===
-        // 如果子节点是 'URDFJoint' 或 'URDFLink'，说明要进入下一个部件了，
-        // 我们直接跳过，不再递归进去。
-        // 注意：urdf-loader 中 Joint 通常是 Link 的子节点
+        // Key logic: a 'URDFJoint' or 'URDFLink' child marks the start of the
+        // next part, so skip it — don't recurse in (we only want to highlight
+        // the meshes of the currently selected link).
+        // Note: in urdf-loader a Joint is typically a child of a Link.
         if (child.isURDFJoint || child.isURDFLink || child.type === 'URDFJoint' || child.type === 'URDFLink') {
           continue;
         }
 
-        // 否则（通常是 Visual, Collision, Group 等），继续递归查找 Mesh
+        // Otherwise (usually Visual, Collision, Group, etc.) keep recursing for meshes.
         traverseVisualsOnly(child);
       }
     }
   };
 
-  // 从当前选中的 Link 开始执行
+  // Start from the currently selected link.
   traverseVisualsOnly(linkObject);
 };
 

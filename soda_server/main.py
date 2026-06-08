@@ -14,10 +14,8 @@ from mujoco_manager import MujocoManager
 from robot_interface import SimRobot
 from replay_manager import ReplayManager
 
-# 唯一需要的日志依赖
 from data_logger import DataLogger
 
-# 配置
 HOST = "0.0.0.0"
 PORT = 8080
 VIDEO_PATH = "test_30fps.mp4"
@@ -41,14 +39,12 @@ STATIC_PATH = "public"
 POINTCLOUD_PATH = "Wheat_Alsen_F6_2023-06-30-1836_fused_output_cluster_2.npy"
 RECORDING_DIR = "recordings"
 
-# 全局变量
 robot = None
 current_mode = "realtime"  # "realtime" or "replay"
-replay_manager = None  # ReplayManager 实例
+replay_manager = None
 
-# 录制相关状态
 recording_enabled = False
-urdf_logger = None  # 这是一个 URDFLogger 实例
+urdf_logger = None
 current_file_path = None
 
 
@@ -72,7 +68,8 @@ def init_mujoco():
 
 def state_to_joint_states(state, joint_names):
     """
-    将 RobotInterface.get_state() 返回的 numpy 格式转换为原来的 list[dict] 格式
+    Convert the numpy format returned by RobotInterface.get_state()
+    into the original list[dict] format.
     """
     joint_states = []
     for i in range(len(state["q"])):
@@ -90,10 +87,10 @@ def state_to_joint_states(state, joint_names):
 
 async def record_handler(request):
     """
-    处理录制请求。
-    逻辑：
-    - Start: 创建新的 URDFLogger 实例 (这会初始化新的 DuckDB 连接)，并绑定文件。
-    - Stop: 显式关闭 Logger 以断开 DB 连接。
+    Handle recording requests.
+    - Start: create a new URDFLogger instance (this opens a fresh DuckDB
+      connection) and bind it to the file.
+    - Stop: explicitly close the logger to release the DB connection.
     """
     global recording_enabled, urdf_logger, current_file_path
 
@@ -102,14 +99,12 @@ async def record_handler(request):
         action = data.get("action")
 
         if action == "start":
-            # 1. 生成文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Base name for parquet files
             filename = f"rec_{timestamp}"
             current_file_path = os.path.join(RECORDING_DIR, filename)
 
-            # 2. 实例化 Logger
-            # 自动创建并流式写入 LeRobot 格式
+            # Instantiate the logger; auto-creates and streams in LeRobot format
             print(f"Initializing URDFLogger for recording: {current_file_path}")
 
             # Determine num_points and img_shape from robot if available
@@ -158,7 +153,7 @@ async def record_handler(request):
 
 
 async def handle_joint_command(ws, data):
-    """处理关节控制命令"""
+    """Handle joint control commands"""
     global robot
 
     joint_name = data.get("joint_name")
@@ -186,7 +181,7 @@ async def handle_joint_command(ws, data):
 
 
 async def handle_gripper_set(ws, data):
-    """处理夹爪距离设置命令"""
+    """Handle gripper distance set commands"""
     global robot
 
     distance = data.get("distance", 0.05)
@@ -201,7 +196,7 @@ async def handle_gripper_set(ws, data):
 
 
 async def message_handler(ws):
-    """处理前端消息的协程"""
+    """Coroutine that handles messages from the frontend"""
     try:
         while not ws.closed:
             msg = await ws.receive()
@@ -225,7 +220,7 @@ async def message_handler(ws):
 
 
 async def broadcast_handler(ws):
-    """定时发送数据的协程"""
+    """Coroutine that periodically sends data"""
     global robot, urdf_logger, replay_manager, current_mode
 
     try:
@@ -241,7 +236,6 @@ async def broadcast_handler(ws):
                 state = robot.get_state()
                 joint_states = state_to_joint_states(state, robot.joint_names)
 
-                # 记录数据
                 if recording_enabled and urdf_logger is not None:
                     if frame is not None:
                         await urdf_logger.log_image_async("camera/rgb", frame, time_seconds=current_ts)
@@ -310,7 +304,7 @@ async def broadcast_handler(ws):
             header = struct.pack("I", len(packed_bytes))
             await ws.send_bytes(header + packed_bytes)
 
-            # 帧率控制
+            # Frame rate control
             process_time = time.time() - start_time
             sleep_time = max(0, (1.0 / TARGET_FPS) - process_time)
             await asyncio.sleep(sleep_time)
@@ -341,7 +335,7 @@ async def websocket_handler(request):
         return ws
 
 
-# ... (joint_command_handler, get_urdf_handler, cors_middleware 保持不变) ...
+# ... (joint_command_handler, get_urdf_handler, cors_middleware unchanged) ...
 
 
 async def joint_command_handler(request):
@@ -388,7 +382,7 @@ async def gripper_distance_handler(request):
 
 
 async def get_gripper_joints_handler(request):
-    """获取 gripper 相关的关节列表"""
+    """Get the list of gripper-related joints"""
     global robot
     if robot is None:
         return web.json_response({"error": "Robot not initialized"}, status=503)
@@ -403,7 +397,7 @@ async def get_gripper_joints_handler(request):
 
 
 async def get_recordings_handler(request):
-    """获取 recordings 文件夹中的所有录制文件 (Based on LeRobot format directories)"""
+    """Get all recording files in the recordings folder (based on LeRobot format directories)"""
     try:
         if not os.path.exists(RECORDING_DIR):
             return web.json_response({"files": []})
@@ -422,7 +416,7 @@ async def get_recordings_handler(request):
 
 
 async def set_mode_handler(request):
-    """设置运行模式（realtime 或 replay）"""
+    """Set the run mode (realtime or replay)"""
     global current_mode, replay_manager
 
     try:
@@ -444,7 +438,7 @@ async def set_mode_handler(request):
 
 
 async def load_replay_handler(request):
-    """加载回放文件"""
+    """Load a replay file"""
     global replay_manager
 
     try:
@@ -474,7 +468,7 @@ async def load_replay_handler(request):
 
 
 async def get_replay_status_handler(request):
-    """获取当前回放状态"""
+    """Get the current replay status"""
     global replay_manager
 
     try:
@@ -497,7 +491,7 @@ async def get_replay_status_handler(request):
 
 
 async def get_replay_trajectory_handler(request):
-    """获取完整的轨迹数据（不含视频/点云）"""
+    """Get the full trajectory data (excluding video/point cloud)"""
     global replay_manager
 
     try:
@@ -511,7 +505,7 @@ async def get_replay_trajectory_handler(request):
 
 
 async def get_replay_chunk_handler(request):
-    """获取视频/点云数据块 (MessagePack)"""
+    """Get a video/point cloud data chunk (MessagePack)"""
     global replay_manager
     try:
         if replay_manager is None:

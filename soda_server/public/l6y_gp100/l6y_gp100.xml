@@ -120,12 +120,12 @@
   </worldbody>
 <equality>
     <!-- 
-      solimp="0.99 0.99 0.01": 
-          前两个数接近 1 表示在约束误差较小时也是“硬”的。
-          第三个数是宽度参数。
-      solref="0.005 1": 
-          第一个数是时间常数 (Time constant)，越小越硬（0.005s）。
-          第二个数是阻尼比 (Damping ratio)，1 表示临界阻尼，防止震荡。
+      solimp="0.99 0.99 0.01":
+          The first two values near 1 mean the constraint stays "stiff" even at small constraint errors.
+          The third value is the width parameter.
+      solref="0.005 1":
+          The first value is the time constant; smaller is stiffer (0.005s).
+          The second value is the damping ratio; 1 is critical damping, preventing oscillation.
     -->
     <joint joint1="gripper_left_joint_1" joint2="gripper_left_joint_2" polycoef="0 1 0 0 0" solimp="0.99 0.99 0.01" solref="0.001 1"/>
     <joint joint1="gripper_left_joint_1" joint2="gripper_left_helper_joint" polycoef="0 1 0 0 0" solimp="0.99 0.99 0.01" solref="0.001 1"/>

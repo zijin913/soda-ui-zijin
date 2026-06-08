@@ -1,58 +1,58 @@
 # Recording & Replay Test Script
 
-## 概述
+## Overview
 
-`test_recording.py` 是一个用于测试 SODA 录制和回放功能的测试脚本。
+`test_recording.py` is a test script for testing SODA's recording and replay functionality.
 
-## 功能
+## Features
 
-1. **录制测试**
-   - 连接到 WebSocket 服务器
-   - 启动录制
-   - 收集 10 秒钟的数据（约 290 帧）
-   - 保存 RGB 帧为 MP4 视频文件
+1. **Recording Test**
+   - Connect to the WebSocket server
+   - Start recording
+   - Collect 10 seconds of data (about 290 frames)
+   - Save RGB frames as an MP4 video file
 
-2. **回放 API 测试**
-   - 获取录制文件列表
-   - 切换到回放模式
-   - 检查回放状态
-   - 重置为实时模式
+2. **Replay API Test**
+   - Retrieve the list of recording files
+   - Switch to replay mode
+   - Check replay status
+   - Reset to realtime mode
 
-## 使用方法
+## Usage
 
-### 1. 启动服务器
+### 1. Start the Server
 
 ```bash
 cd soda_server
 uv run python main.py
 ```
 
-或者在后台运行：
+Or run it in the background:
 ```bash
 cd soda_server
 nohup uv run python main.py > server.log 2>&1 &
 ```
 
-### 2. 运行测试脚本
+### 2. Run the Test Script
 
 ```bash
 cd soda_server
 uv run python test_recording.py
 ```
 
-### 3. 查看结果
+### 3. View Results
 
-测试完成后，会生成以下文件：
+After the test completes, the following files are generated:
 
-- **录制文件**: `recordings/rec_YYYYMMDD_HHMMSS.rrd`
-  - RRD 格式的完整录制文件
-  - 包含视频、点云、关节数据
+- **Recording file**: `recordings/rec_YYYYMMDD_HHMMSS.rrd`
+  - Complete recording file in RRD format
+  - Contains video, point cloud, and joint data
 
-- **视频文件**: `test_recordings/test_recording_YYYYMMDD_HHMMSS.mp4`
-  - MP4 格式的 RGB 视频
-  - 可使用任何视频播放器打开
+- **Video file**: `test_recordings/test_recording_YYYYMMDD_HHMMSS.mp4`
+  - RGB video in MP4 format
+  - Can be opened with any video player
 
-## 输出示例
+## Example Output
 
 ```
 ============================================================
@@ -102,85 +102,85 @@ Testing Replay API ===
 ============================================================
 ```
 
-## 测试结果
+## Test Results
 
-成功的测试应该：
+A successful test should:
 
-1. ✅ 服务器响应正常
-2. ✅ WebSocket 连接成功
-3. ✅ 录制启动成功
-4. ✅ 捕获约 290 帧（10 秒 @ 30 FPS）
-5. ✅ 录制停止成功
-6. ✅ 视频保存成功（约 6MB）
-7. ✅ RRD 文件创建成功（约 100MB）
-8. ✅ API 测试通过
+1. ✅ Server responds normally
+2. ✅ WebSocket connection succeeds
+3. ✅ Recording starts successfully
+4. ✅ Captures about 290 frames (10 seconds @ 30 FPS)
+5. ✅ Recording stops successfully
+6. ✅ Video saved successfully (about 6MB)
+7. ✅ RRD file created successfully (about 100MB)
+8. ✅ API test passes
 
-## 文件大小参考
+## File Size Reference
 
-- **RRD 文件**: ~100MB / 10 秒
-  - 包含完整数据（视频、点云、关节）
-  - Rerun 压缩格式
+- **RRD file**: ~100MB / 10 seconds
+  - Contains complete data (video, point cloud, joints)
+  - Rerun compressed format
 
-- **MP4 视频**: ~6MB / 10 秒
-  - 仅 RGB 视频帧
-  - H.264 编码，70% 质量
+- **MP4 video**: ~6MB / 10 seconds
+  - RGB video frames only
+  - H.264 encoded, 70% quality
 
-## 故障排除
+## Troubleshooting
 
-### 问题：服务器未运行
+### Issue: Server Not Running
 
 ```
 Server is not running or not accessible
 ```
 
-**解决方法**：启动服务器
+**Solution**: Start the server
 ```bash
 cd soda_server
 uv run python main.py
 ```
 
-### 问题：端口被占用
+### Issue: Port Already in Use
 
 ```
 OSError: [Errno 98] address already in use
 ```
 
-**解决方法**：
-1. 查找占用端口的进程：`lsof -i :8080`
-2. 杀死进程：`kill <PID>`
-3. 重新启动服务器
+**Solution**:
+1. Find the process occupying the port: `lsof -i :8080`
+2. Kill the process: `kill <PID>`
+3. Restart the server
 
-### 问题：无法连接 WebSocket
+### Issue: Cannot Connect to WebSocket
 
 ```
 Failed to connect to host localhost:8080
 ```
 
-**解决方法**：
-1. 检查服务器是否在运行
-2. 检查防火墙设置
-3. 确认 URL 正确
+**Solution**:
+1. Check whether the server is running
+2. Check firewall settings
+3. Confirm the URL is correct
 
-## 自定义测试
+## Custom Testing
 
-修改录制时长，编辑 `test_recording.py`:
+To change the recording duration, edit `test_recording.py`:
 
 ```python
-record_duration = 10  # 修改为你需要的秒数
+record_duration = 10  # Change to the number of seconds you need
 ```
 
-## 下一步
+## Next Steps
 
-测试完成后，可以通过前端界面测试回放功能：
+After the test completes, you can test the replay functionality through the frontend interface:
 
-1. 打开前端：`cd soda_ui && npm run dev`
-2. 切换到回放模式（RP 按钮）
-3. 选择录制的 RRD 文件
-4. 使用播放控制按钮回放
+1. Open the frontend: `cd soda_ui && npm run dev`
+2. Switch to replay mode (RP button)
+3. Select the recorded RRD file
+4. Use the playback control buttons to replay
 
-## 技术细节
+## Technical Details
 
-- **WebSocket**: 使用 `websockets` 库异步连接
-- **MessagePack**: 使用 `msgpack` 解码二进制数据
-- **视频编码**: 使用 OpenCV `VideoWriter`，MP4V 编码
-- **API 测试**: 使用 `aiohttp` 测试 REST API 端点
+- **WebSocket**: Uses the `websockets` library for asynchronous connection
+- **MessagePack**: Uses `msgpack` to decode binary data
+- **Video Encoding**: Uses OpenCV `VideoWriter` with MP4V encoding
+- **API Testing**: Uses `aiohttp` to test REST API endpoints

@@ -2,7 +2,6 @@
   <div>
     <!-- Icon Panel -->
     <div class="icon-panel">
-      <!-- 假设有一个默认图标，这里用占位符 -->
       <div class="panel-icon-placeholder"></div>
     </div>
 

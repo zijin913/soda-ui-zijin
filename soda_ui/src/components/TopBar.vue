@@ -6,7 +6,7 @@
         <LogoIcon />
       </div>
 
-      <!-- 中间工具栏 -->
+      <!-- Center toolbar -->
       <div class="toolbar-group">
         <!-- Mode Toggle -->
         <button class="tool-btn" :class="{ 'active': mode === 'realtime' }" @click="setMode('realtime')">
@@ -21,7 +21,7 @@
              prompt appear on the backend host's display. -->
         <button v-if="mode === 'realtime'" class="tool-btn teleop-btn" :class="{ 'active': isTeleopRunning }"
                 @click="toggleTeleop"
-                :title="isTeleopRunning ? '停止 teleop' : '启动 teleop(是否录制会在弹出的相机窗口中询问)'">
+                :title="isTeleopRunning ? 'Stop teleop' : 'Start teleop (recording is asked in the camera window that pops up on the robot host)'">
           <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
         </button>
 
@@ -29,7 +29,7 @@
              operator can hand-pose the arms back to home. A popup appears on
              the robot host (the UI goes dark once the backend is killed). -->
         <button class="tool-btn stop-btn" @click="shutdownAll"
-                title="停止所有进程并进入 zero-gravity(手动摆正机械臂);之后在弹窗里按 q/ESC 退出">
+                title="Stop all processes and enter zero-gravity (hand-pose the arms back to home); then press q/ESC in the popup on the robot host to exit">
           <span class="stop-label">STOP</span>
         </button>
 
@@ -165,9 +165,10 @@ const toggleTeleop = async () => {
 // survives its own death and shows a popup on the robot host.
 const shutdownAll = async () => {
   const ok = window.confirm(
-    '停止所有进程并进入 zero-gravity?\n\n' +
-    '机械臂会变为可自由摆动(重力补偿)。停止后界面会失效,\n' +
-    '请到机器人主机的弹窗里:摆正机械臂后按 q / ESC 退出整个程序。');
+    'Stop all processes and enter zero-gravity?\n\n' +
+    'The arms will become free to move by hand (gravity compensation). The UI\n' +
+    'will go dark once stopped. On the robot host popup: hand-pose the arms back\n' +
+    'to home, then press q / ESC to exit the whole program.');
   if (!ok) return;
   try {
     await fetch('http://localhost:8080/api/shutdown', {
@@ -178,8 +179,8 @@ const shutdownAll = async () => {
   } catch (error) {
     // backend is being killed — losing the connection is expected.
   }
-  window.alert('正在停止所有进程并启动 zero-gravity。\n' +
-               '请到机器人主机的弹窗操作:摆正机械臂后按 q / ESC 退出。');
+  window.alert('Stopping all processes and starting zero-gravity.\n' +
+               'On the robot host popup: hand-pose the arms back to home, then press q / ESC to exit.');
 };
 
 // Poll teleop status so the button reflects reality (teleop can also exit
@@ -283,7 +284,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 将 App.vue 中关于 .top-bar 的样式移动到这里 */
+/* .top-bar styles moved here from App.vue */
 .top-bar {
   height: 90px;
   padding: 12px 24px;

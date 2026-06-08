@@ -1,6 +1,6 @@
 <template>
   <aside class="right-sidebar">
-    <!-- Gripper 模块 -->
+    <!-- Gripper module -->
     <div class="panel-block gripper-block">
       <div class="panel-header">
         <GripperIcon />
@@ -33,7 +33,7 @@
       </div>
     </div>
 
-    <!-- Velocity / Charts 模块 -->
+    <!-- Velocity / Charts module -->
     <div class="panel-block velocity-block">
       <!-- Switch Bar -->
       <div class="switch-bar">
