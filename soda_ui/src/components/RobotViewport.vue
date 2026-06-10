@@ -52,6 +52,18 @@ const dragStartPoint = { x: 0, y: 0 };
 let initialJointAngle = 0;
 const currentJointAngles = ref({}); // Store real-time joint angles
 
+// Per-joint render smoothing. Telemetry arrives at ~30 Hz (10 Hz during
+// teleop) and used to snap setJointValue() directly, so the 60 fps render
+// showed discrete steps ("一段一段"). Instead we store the latest telemetry
+// value as a target and ease the displayed angle toward it every animation
+// frame, turning low-rate state updates into continuous motion.
+// stateKey -> { model, jointObj, mimicObjs, target, displayed }
+const jointSmoothing = {};
+// Exponential-smoothing rate (1/s). Higher = snappier (less lag, more
+// stepping); lower = smoother (more lag). ~22 gives a ~45 ms time constant.
+const JOINT_SMOOTHING_RATE = 22;
+let lastSmoothTime = 0;
+
 // Gripper joints that should not be controlled via dragging
 let gripperJointNames = [];
 
@@ -209,6 +221,24 @@ const initScene = () => {
 
   const animate = () => {
     requestAnimationFrame(animate);
+
+    // Ease every joint toward its latest telemetry target so 30 Hz state
+    // updates render as continuous motion. Frame-rate independent: alpha is
+    // derived from elapsed time, so the feel is the same at 30/60/144 fps.
+    const now = performance.now();
+    const dt = lastSmoothTime ? Math.min((now - lastSmoothTime) / 1000, 0.1) : 0;
+    lastSmoothTime = now;
+    const alpha = dt > 0 ? 1 - Math.exp(-JOINT_SMOOTHING_RATE * dt) : 1;
+    for (const key in jointSmoothing) {
+      const e = jointSmoothing[key];
+      const diff = e.target - e.displayed;
+      if (Math.abs(diff) < 1e-5) continue;
+      e.displayed += diff * alpha;
+      if (Math.abs(e.target - e.displayed) < 1e-5) e.displayed = e.target;
+      e.jointObj.setJointValue(e.displayed);
+      for (const m of e.mimicObjs) m.setJointValue(e.displayed);
+    }
+
     controls.update();
     renderer.render(scene, camera);
   };
@@ -269,21 +299,33 @@ const handleJointStateUpdate = (event) => {
 
     // Update local state map (keyed by side+name for dual mode)
     const stateKey = side ? `${side}_${jointName}` : jointName;
-    currentJointAngles.value[stateKey] = angle;
 
-    const jointObj = findJointByName(targetModel, jointName);
-    if (jointObj && jointObj.setJointValue) {
-      jointObj.setJointValue(angle);
+    // While the user is actively dragging this joint, local prediction owns
+    // its target — ignore the round-trip-delayed telemetry value so the two
+    // don't fight and jitter. Telemetry resumes for it on pointer-up.
+    if (isDragging && draggingJoint) {
+      const dragKey = draggingSide ? `${draggingSide}_${draggingJoint.urdfName}` : draggingJoint.urdfName;
+      if (stateKey === dragKey) return;
     }
 
-    // Handle mimic joints (parallel linkage)
-    if (MIMIC_JOINTS[jointName]) {
-      MIMIC_JOINTS[jointName].forEach(mimicName => {
-        const mimicJoint = findJointByName(targetModel, mimicName);
-        if (mimicJoint && mimicJoint.setJointValue) {
-          mimicJoint.setJointValue(angle);
-        }
-      });
+    currentJointAngles.value[stateKey] = angle;
+
+    // Register/update the smoothing target. The actual setJointValue() runs
+    // in the animate loop, easing toward this target. Joint object lookups
+    // are cached per stateKey so we don't traverse the model every frame.
+    let entry = jointSmoothing[stateKey];
+    if (!entry || entry.model !== targetModel) {
+      const jointObj = findJointByName(targetModel, jointName);
+      if (!jointObj || !jointObj.setJointValue) return;
+      const mimicObjs = (MIMIC_JOINTS[jointName] || [])
+        .map(name => findJointByName(targetModel, name))
+        .filter(j => j && j.setJointValue);
+      // Snap on first sight so the model doesn't sweep from 0 at startup.
+      jointObj.setJointValue(angle);
+      mimicObjs.forEach(m => m.setJointValue(angle));
+      jointSmoothing[stateKey] = { model: targetModel, jointObj, mimicObjs, target: angle, displayed: angle };
+    } else {
+      entry.target = angle;
     }
   });
 };
@@ -470,13 +512,6 @@ const onWheel = (event) => {
   const degreesPerScroll = 1;
   const angleDelta = (event.deltaY / 100) * degreesPerScroll * (Math.PI / 180);
 
-  console.log('onWheel debug:', {
-    joint: draggingJoint.urdfName,
-    angleDelta,
-    initialJointAngle,
-    limit: draggingJoint.limit
-  });
-
   // Use current initial angle (which tracks the latest local state)
   const potentialNewAngle = initialJointAngle - angleDelta;
   let clampedAngle = potentialNewAngle;
@@ -489,25 +524,12 @@ const onWheel = (event) => {
   // Determine actual change allowed
   const actualChange = clampedAngle - initialJointAngle;
 
-  console.log('Clamping check:', {
-    potentialNewAngle,
-    clampedAngle,
-    actualChange
-  });
-
   // Check if blocked (trying to move but stuck)
   if (Math.abs(angleDelta) > 1e-6 && Math.abs(actualChange) < 1e-6) {
     // Only trigger if we are actively trying to push past the limit
     // i.e., angleDelta is pushing further in the direction of the limit
     const isPushingLower = angleDelta > 0 && draggingJoint.limit && Math.abs(initialJointAngle - draggingJoint.limit.lower) < 1e-4;
     const isPushingUpper = angleDelta < 0 && draggingJoint.limit && Math.abs(initialJointAngle - draggingJoint.limit.upper) < 1e-4;
-
-    console.log('Pushing limit check:', {
-        isPushingLower,
-        isPushingUpper,
-        diffLower: draggingJoint.limit ? Math.abs(initialJointAngle - draggingJoint.limit.lower) : 'N/A',
-        diffUpper: draggingJoint.limit ? Math.abs(initialJointAngle - draggingJoint.limit.upper) : 'N/A'
-    });
 
     if (isPushingLower) {
         triggerLimitToast('Joint at minimum limit');
@@ -519,6 +541,17 @@ const onWheel = (event) => {
   initialJointAngle = clampedAngle;
   // Accumulate only the allowed change to send to backend
   accumulatedDeltaAngle += actualChange;
+
+  // Optimistic local update: move the rendered joint the instant the user
+  // scrolls instead of waiting for the backend round-trip + 30 Hz telemetry.
+  // That open-loop round-trip is what made control feel choppy ("一段一段").
+  // The command is still sent at JOINT_CONTROL_HZ for the real robot; the
+  // animate loop eases the display toward this target, and telemetry takes
+  // over again on pointer-up (see the drag guard in handleJointStateUpdate).
+  const stateKey = draggingSide ? `${draggingSide}_${draggingJoint.urdfName}` : draggingJoint.urdfName;
+  const entry = jointSmoothing[stateKey];
+  if (entry) entry.target = clampedAngle;
+  currentJointAngles.value[stateKey] = clampedAngle;
 };
 
 const onPointerUp = () => {

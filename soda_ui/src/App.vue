@@ -126,6 +126,29 @@ const fullJointData = computed(() => {
 
 // Split backend's [[x,y,z,r,g,b], ...] into separate points/colors arrays for the viewport.
 // Falls back to no colors if rows are length 3 (legacy/uncolored clouds).
+// Decode the backend's binary point cloud (Uint8Array of float32
+// x,y,z,r,g,b per point) into { points: [[x,y,z]...], colors: [[r,g,b]...] }.
+// We copy via slice() so the Float32Array view is 4-byte aligned regardless
+// of the msgpack buffer's offset.
+const decodePcBin = (pcBin, n) => {
+  try {
+    const u8 = pcBin instanceof Uint8Array ? pcBin : new Uint8Array(pcBin);
+    const f32 = new Float32Array(u8.slice().buffer);
+    if (f32.length < n * 6) return null;
+    const points = new Array(n);
+    const colors = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const o = i * 6;
+      points[i] = [f32[o], f32[o + 1], f32[o + 2]];
+      colors[i] = [f32[o + 3], f32[o + 4], f32[o + 5]];
+    }
+    return { points, colors };
+  } catch (e) {
+    console.error('decodePcBin failed:', e);
+    return null;
+  }
+};
+
 const splitXyzRgb = (raw) => {
   const first = raw[0];
   if (!Array.isArray(first) || first.length < 6) {
@@ -241,8 +264,17 @@ const handleMessagepackData = (arrayBuffer) => {
         if (cameraRgbUrls.value.side) URL.revokeObjectURL(cameraRgbUrls.value.side);
         cameraRgbUrls.value.side = newUrl;
       }
-      // Point cloud (top-level, sent at ~5Hz from left arm's wrist camera in left base frame)
-      if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
+      // Point cloud — binary float32 (x,y,z,r,g,b per point), sent once per
+      // new cloud from the backend's background worker. Decoded into the same
+      // { points, colors } shape splitXyzRgb produces, so the viewport is
+      // unchanged. (Legacy list form `data.pointcloud` still handled below.)
+      if (data.pc_bin && data.pc_n > 0) {
+        const detail = decodePcBin(data.pc_bin, data.pc_n);
+        if (detail) {
+          pointCloudData.value = detail;
+          window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
+        }
+      } else if (data.pointcloud && Array.isArray(data.pointcloud) && data.pointcloud.length > 0) {
         const detail = splitXyzRgb(data.pointcloud);
         pointCloudData.value = detail;
         window.dispatchEvent(new CustomEvent('point-cloud-update', { detail }));
