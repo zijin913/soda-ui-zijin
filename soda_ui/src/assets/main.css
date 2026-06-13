@@ -1,4 +1,5 @@
 @import './base.css';
+@import './phosphor.css';
 
 #app {
   max-width: 100%;

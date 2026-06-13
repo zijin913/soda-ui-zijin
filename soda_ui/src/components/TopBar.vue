@@ -8,11 +8,17 @@
 
       <!-- Center toolbar -->
       <div class="toolbar-group">
-        <!-- Mode Toggle -->
-        <button class="tool-btn" :class="{ 'active': mode === 'realtime' }" @click="setMode('realtime')">
+        <!-- Mode Toggle — disabled until backend is up (RT/RP set backend mode) -->
+        <button class="tool-btn" :class="{ 'active': mode === 'realtime' }"
+                :disabled="!isBackendUp"
+                :title="backendDisabledTitle"
+                @click="setMode('realtime')">
           <span class="mode-label">RT</span>
         </button>
-        <button class="tool-btn" :class="{ 'active': mode === 'replay' }" @click="setMode('replay')">
+        <button class="tool-btn" :class="{ 'active': mode === 'replay' }"
+                :disabled="!isBackendUp"
+                :title="backendDisabledTitle"
+                @click="setMode('replay')">
           <span class="mode-label">RP</span>
         </button>
 
@@ -20,22 +26,26 @@
              via the backend. The OpenCV camera window + "Record this teleop?"
              prompt appear on the backend host's display. -->
         <button v-if="mode === 'realtime'" class="tool-btn teleop-btn" :class="{ 'active': isTeleopRunning }"
+                :disabled="!isBackendUp"
                 @click="toggleTeleop"
-                :title="isTeleopRunning ? 'Stop teleop' : 'Start teleop (recording is asked in the camera window that pops up on the robot host)'">
+                :title="!isBackendUp ? backendDisabledTitle :
+                        isTeleopRunning ? 'Stop teleop' : 'Start teleop (recording is asked in the camera window that pops up on the robot host)'">
           <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
         </button>
 
-        <!-- STOP / Recovery — kill EVERYTHING and start zero-gravity so the
-             operator can hand-pose the arms back to home. A popup appears on
-             the robot host (the UI goes dark once the backend is killed). -->
+        <!-- STOP / Recovery — kill EVERYTHING and start zero-gravity. Routes
+             through /api/shutdown when the backend is alive, otherwise asks the
+             launcher to spawn recover_zerog.py directly. Same end state. -->
         <button class="tool-btn stop-btn" @click="shutdownAll"
-                title="Stop all processes and enter zero-gravity (hand-pose the arms back to home); then press q/ESC in the popup on the robot host to exit">
+                :disabled="!canStop"
+                :title="canStop ? 'Stop all processes and enter zero-gravity (hand-pose the arms back to home); then press q/ESC in the popup on the robot host to exit' : 'Nothing running'">
           <span class="stop-label">STOP</span>
         </button>
 
         <!-- Recordings Dropdown (only in replay mode) -->
         <div v-if="mode === 'replay'" class="recordings-dropdown-wrapper">
-          <select v-model="selectedRecording" @change="loadRecording" class="recordings-select">
+          <select v-model="selectedRecording" @change="loadRecording" class="recordings-select"
+                  :disabled="!isBackendUp" :title="!isBackendUp ? backendDisabledTitle : ''">
             <option value="">Select Recording</option>
             <option v-for="file in recordingFiles" :key="file" :value="file">
               {{ file }}
@@ -91,12 +101,17 @@
           <DepthToolIcon />
         </button>
       </div>
+
+      <!-- Phosphor status rail, pushed to the right. -->
+      <div class="rail-slot">
+        <StatusRail />
+      </div>
     </div>
   </header>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import LogoIcon from '@/components/icons/LogoIcon.vue';
 import HandToolIcon from '@/components/icons/HandToolIcon.vue';
 import MoveToolIcon from '@/components/icons/MoveToolIcon.vue';
@@ -105,6 +120,17 @@ import DropdownArrowIcon from '@/components/icons/DropdownArrowIcon.vue';
 import ToolIndicatorIcon from '@/components/icons/ToolIndicatorIcon.vue';
 import CoordinateIcon from '@/components/icons/Coordinate.vue';
 import DepthToolIcon from '@/components/icons/DepthToolIcon.vue';
+import StatusRail from '@/components/StatusRail.vue';
+import { useConnectionStore } from '@/stores/connection';
+
+const conn = useConnectionStore();
+const isBackendUp = computed(() => conn.backend === 'up');
+const canStop = computed(() => conn.launcher === 'up' && (conn.backend === 'up' || conn.hw === 'up'));
+const backendDisabledTitle = computed(() =>
+  conn.launcher === 'up'
+    ? 'Backend is down — start it from the Launcher card'
+    : 'Launcher not reachable — start `python -m soda_launcher` on the robot host',
+);
 
 const props = defineProps({
   modelValue: { type: String, default: 'hand' }
@@ -116,8 +142,9 @@ const currentTool = ref(props.modelValue);
 const isDropdownOpen = ref(false);
 const isCoordinateActive = ref(false);
 const isDepthActive = ref(false);
-const isTeleopRunning = ref(false);       // teleop subprocess running on the backend host
-let teleopStatusTimer = null;
+// Teleop running state lives in the connection store now (also visible from
+// StatusRail). It's polled by the store; we just read it.
+const isTeleopRunning = computed(() => conn.teleopRunning);
 const recordingFiles = ref([]);
 const selectedRecording = ref('');
 const mode = ref('realtime');
@@ -146,13 +173,15 @@ const toggleDepth = () => {
 const toggleTeleop = async () => {
   const path = isTeleopRunning.value ? '/api/teleop/stop' : '/api/teleop/start';
   try {
-    const response = await fetch(`http://localhost:8080${path}`, {
+    const response = await fetch(`${conn.backendUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
     if (response.ok) {
-      await fetchTeleopStatus();
+      // Refresh the store immediately so the button reflects reality without
+      // waiting for the next 2s poll tick.
+      await conn.pollTeleopOnce();
       emit('teleopToggled', isTeleopRunning.value);
     }
   } catch (error) {
@@ -164,42 +193,34 @@ const toggleTeleop = async () => {
 // Destructive — confirm first. The backend spawns a detached helper that
 // survives its own death and shows a popup on the robot host.
 const shutdownAll = async () => {
+  // Always route through the launcher — it knows the mode and dispatches:
+  //   sim:  kill_servers.sh (just kill everything; no zero-gravity)
+  //   real: recover_zerog flow (kill + gravity-comp + OpenCV hand-pose popup)
+  const isReal = conn.mode === 'real';
   const ok = window.confirm(
-    'Stop all processes and enter zero-gravity?\n\n' +
-    'The arms will become free to move by hand (gravity compensation). The UI\n' +
-    'will go dark once stopped. On the robot host popup: hand-pose the arms back\n' +
-    'to home, then press q / ESC to exit the whole program.');
+    isReal
+      ? 'Stop all processes and enter zero-gravity?\n\n' +
+        'The arms will become free to move by hand (gravity compensation).\n' +
+        'On the robot host popup: hand-pose the arms back to home, then press\n' +
+        'q / ESC to exit the whole program.'
+      : 'Stop the sim and kill all processes?',
+  );
   if (!ok) return;
-  try {
-    await fetch('http://localhost:8080/api/shutdown', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-  } catch (error) {
-    // backend is being killed — losing the connection is expected.
+  const r = await conn.stop();
+  if (!r.ok) {
+    window.alert(`Stop failed: ${r.error}`);
+    return;
   }
-  window.alert('Stopping all processes and starting zero-gravity.\n' +
-               'On the robot host popup: hand-pose the arms back to home, then press q / ESC to exit.');
+  if (isReal) {
+    window.alert('Stopping all processes and starting zero-gravity.\n' +
+                 'On the robot host popup: hand-pose the arms back to home, then press q / ESC to exit.');
+  }
 };
 
-// Poll teleop status so the button reflects reality (teleop can also exit
-// itself via the 'q' key in its OpenCV window).
-const fetchTeleopStatus = async () => {
-  try {
-    const response = await fetch('http://localhost:8080/api/teleop/status');
-    if (response.ok) {
-      const data = await response.json();
-      isTeleopRunning.value = !!data.running;
-    }
-  } catch (error) {
-    // backend not up yet — leave state as-is
-  }
-};
 
 const fetchRecordings = async () => {
   try {
-    const response = await fetch('http://localhost:8080/api/recordings');
+    const response = await fetch(`${conn.backendUrl}/api/recordings`);
     if (response.ok) {
       const data = await response.json();
       recordingFiles.value = data.files || [];
@@ -211,7 +232,7 @@ const fetchRecordings = async () => {
 
 const setMode = async (newMode) => {
   try {
-    const response = await fetch('http://localhost:8080/api/mode/set', {
+    const response = await fetch(`${conn.backendUrl}/api/mode/set`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -235,7 +256,7 @@ const loadRecording = async () => {
   if (!selectedRecording.value) return;
 
   try {
-    const response = await fetch('http://localhost:8080/api/replay/load', {
+    const response = await fetch(`${conn.backendUrl}/api/replay/load`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -255,7 +276,7 @@ const loadRecording = async () => {
 
 const replayControl = async (action) => {
   try {
-    const response = await fetch('http://localhost:8080/api/replay/control', {
+    const response = await fetch(`${conn.backendUrl}/api/replay/control`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -274,12 +295,7 @@ const replayControl = async (action) => {
 
 onMounted(() => {
   fetchRecordings();
-  fetchTeleopStatus();
-  teleopStatusTimer = setInterval(fetchTeleopStatus, 2000);
-});
-
-onUnmounted(() => {
-  if (teleopStatusTimer) clearInterval(teleopStatusTimer);
+  // Teleop polling is owned by the connection store; no local timer here.
 });
 </script>
 
@@ -341,8 +357,20 @@ onUnmounted(() => {
   transition: background 0.2s;
 }
 
-.tool-btn:hover, .tool-btn.active {
+.tool-btn:hover:not(:disabled), .tool-btn.active {
   background: #2D2F31;
+}
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* StatusRail sits at the far right of the header. */
+.rail-slot {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
 }
 
 .tool-btn-group {
@@ -435,40 +463,77 @@ onUnmounted(() => {
   color: white;
 }
 
+/* RT / RP buttons — phosphor amber when active (selected mode). */
 .mode-label {
   font-size: 12px;
-  font-weight: bold;
+  font-weight: 700;
   color: #888;
+  letter-spacing: 1px;
+  transition: color 0.15s, text-shadow 0.15s;
+}
+.tool-btn.active .mode-label {
+  color: #ffb020;
+  text-shadow: 0 0 6px rgba(255,176,32,0.6);
+}
+.tool-btn.active {
+  box-shadow: 0 0 0 1px rgba(255,176,32,0.25) inset;
 }
 
-.mode-label.active {
-  color: white;
-}
-
+/* TELE — phosphor green when running. */
 .teleop-label {
   font-size: 12px;
-  font-weight: bold;
+  font-weight: 700;
   color: #888;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
+  transition: color 0.15s, text-shadow 0.15s;
 }
-
 .teleop-label.running {
-  color: #4caf50;
+  color: #36e08a;
+  text-shadow: 0 0 8px rgba(54,224,138,0.7);
+  animation: tele-pulse 1.6s ease-in-out infinite;
 }
-
 .teleop-btn.active {
-  background: #1f3a23;
+  background: #0d2118;
+  box-shadow: 0 0 0 1px rgba(54,224,138,0.4) inset,
+              0 0 14px rgba(54,224,138,0.25);
+}
+@keyframes tele-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.72; }
 }
 
+/* STOP — Pi-style diagonal red stripes + phosphor glow. */
+.stop-btn {
+  background-image:
+    repeating-linear-gradient(45deg,
+      rgba(74,21,18,0.55) 0px, rgba(74,21,18,0.55) 4px,
+      rgba(20,8,7,0.55) 4px, rgba(20,8,7,0.55) 9px);
+  border: 1px solid rgba(255,68,56,0.45);
+  transition: all 0.15s;
+}
+.stop-btn:hover:not(:disabled) {
+  border-color: rgba(255,68,56,0.85);
+  box-shadow: 0 0 14px rgba(255,68,56,0.55);
+  background-image:
+    repeating-linear-gradient(45deg,
+      rgba(74,21,18,0.85) 0px, rgba(74,21,18,0.85) 4px,
+      rgba(20,8,7,0.85) 4px, rgba(20,8,7,0.85) 9px);
+}
+.stop-btn:disabled {
+  border-color: rgba(255,68,56,0.18);
+  background-image: none;
+  background: transparent;
+}
 .stop-label {
   font-size: 12px;
-  font-weight: bold;
-  color: #f44336;
-  letter-spacing: 0.5px;
+  font-weight: 800;
+  color: #ff4438;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 6px rgba(255,68,56,0.55);
 }
-
-.stop-btn:hover {
-  background: #3a1f1f;
+.stop-btn:disabled .stop-label {
+  color: #62717f;
+  text-shadow: none;
 }
 
 .replay-controls {

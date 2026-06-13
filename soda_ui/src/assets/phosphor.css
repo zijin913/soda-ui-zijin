@@ -1,0 +1,74 @@
+/* phosphor.css — design tokens lifted from the Pi base-vision UI
+ * (~/soda-ui/base_vision/web/index.html). Scoped under .phosphor so it
+ * doesn't bleed into the existing 3D dashboard background. Apply to any
+ * surface that should adopt the "instrument" look: StatusRail, LauncherCard,
+ * camera empty states, indicators.
+ */
+
+.phosphor {
+  --bg:     #06080b;
+  --bg2:    #0a0e13;
+  --panel:  #0d1218;
+  --panel2: #10161e;
+  --line:   #19212b;
+  --line2:  #27323f;
+  --edge:   #020304;
+
+  --txt: #c6d3e0;
+  --mut: #62717f;
+  --dim: #3b4654;
+
+  --amber:  #ffb020;
+  --amber2: #5a4214;
+  --grn:    #36e08a;
+  --grn2:   #15402a;
+  --red:    #ff4438;
+  --red2:   #4a1512;
+  --cyan:   #36cfe0;
+  --mag:    #e85cff;
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono",
+          "DejaVu Sans Mono", Menlo, Consolas, monospace;
+
+  font-family: var(--mono);
+  color: var(--txt);
+  letter-spacing: 0.2px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hairline grid backdrop — match Pi's 34px tile. Apply as an OVERLAY on top
+ * of any solid background so it tints rather than replaces it. */
+.phosphor-grid {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 34px 34px;
+  background-position: -1px -1px;
+}
+
+/* Subtle phosphor wash — use behind the LauncherCard to lift it visually
+ * without darkening the whole page (the dashboard already has its own bg). */
+.phosphor-vignette {
+  position: relative;
+}
+.phosphor-vignette::before {
+  content: "";
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(40,60,80,0.10), transparent 60%),
+    radial-gradient(140% 120% at 50% 120%, rgba(255,176,32,0.04), transparent 55%);
+}
+
+/* Small caps mono label, used everywhere ("LCH", "MODE", "UPTIME"). */
+.phosphor .k,
+.phosphor .mono-label {
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  color: var(--mut);
+  text-transform: uppercase;
+}
+
+/* Helper for tabular-numeric readouts so chips don't jitter as digits change. */
+.phosphor .num {
+  font-variant-numeric: tabular-nums;
+}

@@ -39,7 +39,7 @@ class RobotState:
 class GripperConfig:
     """Gripper configuration."""
     open_position: float = 0.0      # Fully open
-    close_position: float = 1.335   # Fully closed
+    close_position: float = 0.67    # Fully closed (real GR100 gripper_max_position)
     default_duration: float = 0.5   # Default motion duration
 
 
@@ -186,7 +186,7 @@ class RobotService:
         gripper_cfg = self.config.get("gripper", {})
         self.gripper_config = GripperConfig(
             open_position=gripper_cfg.get("open_position", 0.0),
-            close_position=gripper_cfg.get("close_position", 1.335),
+            close_position=gripper_cfg.get("close_position", 0.67),
             default_duration=gripper_cfg.get("default_duration", 0.5),
         )
 

@@ -59,11 +59,12 @@ except ImportError:
 JOINT_NAMES = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6", "gripper_left_joint_1"]
 _ARMS = ("left", "right")
 
-# Gripper config: GR100 lobster-claw closes around 0.65 rad (per firefly_y6 spec).
+# Gripper config: GR100 lobster-claw fully-closed at 0.67 rad — matches the real
+# robot (launchers/configs/*_arm_cfg.json :: gripper_max_position = 0.67).
 # Used to convert finger-tip distance ⇆ joint angle for the frontend slider.
 GRIP_MAX_DIST = 0.100   # m (100 mm fully open)
 GRIP_MIN_DIST = 0.010   # m (10 mm fully closed)
-GRIP_CLOSE_ANGLE = 0.65  # rad, GR100 close position
+GRIP_CLOSE_ANGLE = 0.67  # rad, GR100 fully-closed (== real gripper_max_position)
 
 
 def _get_grip_close_angle(app) -> float:

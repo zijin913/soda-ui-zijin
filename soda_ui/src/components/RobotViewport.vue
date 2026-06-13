@@ -16,6 +16,19 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import URDFLoader from 'urdf-loader';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { useConnectionStore } from '@/stores/connection';
+
+// The backend may hand back asset URLs hard-coded to http://localhost:8080
+// (mesh paths inside the URDF JSON response). When the user opens the UI
+// from a different machine, those localhost URLs resolve to the *browser's*
+// host and fail. Rewrite the host to whatever conn.backendUrl resolves to.
+const conn = useConnectionStore();
+const rewriteHost = (url) => {
+  if (typeof url !== 'string') return url;
+  return url
+    .replace(/^https?:\/\/localhost:8080/, conn.backendUrl)
+    .replace(/^https?:\/\/127\.0\.0\.1:8080/, conn.backendUrl);
+};
 
 const props = defineProps({
   pointCloudData: { default: null },
@@ -125,8 +138,10 @@ const initScene = () => {
   // against the URDF's own URL (which is what we want regardless of which
   // {arm}_{gripper} directory we're loading from).
   manager.setURLModifier((url) => {
-    // urdf-loader passes the resolved absolute URL of the mesh; pass through.
-    return url;
+    // urdf-loader passes the resolved absolute URL of the mesh. Defensively
+    // rewrite any localhost:8080 references in case the URDF itself contains
+    // absolute mesh URLs (rather than relative ones).
+    return rewriteHost(url);
   });
 
   // Material is applied in loadSingleURDF
@@ -181,7 +196,7 @@ const initScene = () => {
 
   const loadURDF = async () => {
     try {
-      const response = await fetch('http://localhost:8080/urdf');
+      const response = await fetch(`${conn.backendUrl}/urdf`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
 
@@ -190,10 +205,10 @@ const initScene = () => {
         // right_base_in_left from hand-eye extrinsics, e.g. [0, -0.448, 0]).
         const leftPos = data.left.position || [0.0, 0.0, 0.0];
         const rightPos = data.right.position || [0.0, -0.448, 0.0];
-        loadSingleURDF(data.left.url, 'left', leftPos);
-        loadSingleURDF(data.right.url, 'right', rightPos);
+        loadSingleURDF(rewriteHost(data.left.url), 'left', leftPos);
+        loadSingleURDF(rewriteHost(data.right.url), 'right', rightPos);
       } else {
-        loadSingleURDF(data.url);
+        loadSingleURDF(rewriteHost(data.url));
       }
     } catch (error) {
       console.error('Failed to load URDF:', error);
@@ -202,7 +217,7 @@ const initScene = () => {
 
   const fetchGripperJoints = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/joints/gripper');
+      const response = await fetch(`${conn.backendUrl}/api/joints/gripper`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

@@ -19,7 +19,7 @@
             :showPointCloud="showPointCloud"
             :mode="currentMode"
             :dualMode="dualMode"
-            @joint-limits-loaded="handleJointLimits"
+            @joint-limit-loaded="handleJointLimits"
           />
 
         <!-- Floating Camera Panel(s) -->
@@ -44,8 +44,21 @@
         />
       </main>
 
-      <!-- 3. Progress Bar (Replay mode only) -->
-      <TimelineControl 
+      <!-- 3a. Joint clearance strip — disabled per user request.
+           Re-enable by uncommenting the block and the import below.
+      <JointClearanceRow
+        v-if="currentMode === 'realtime' && conn.isOperational"
+        :history="chartDataHistory"
+        :jointNames="jointNames"
+        :jointLimits="jointLimits"
+        :dualMode="dualMode"
+        class="clearance-strip"
+      />
+      -->
+
+
+      <!-- 3b. Progress Bar (Replay mode only) -->
+      <TimelineControl
         v-if="currentMode === 'replay'"
         :currentFrame="replayCurrentFrame"
         :totalFrames="replayTotalFrames"
@@ -56,6 +69,15 @@
         @stepBackward="handleReplayControl('step_backward')"
         @seek="handleSeek"
       />
+
+      <!-- 4. Launcher overlay — shown whenever we're not fully operational
+           (launcher down, backend down, or WS disconnected). Collapses to a
+           one-line status pill in StatusRail otherwise. -->
+      <LauncherCard v-if="!conn.isOperational" />
+
+      <!-- 5. Zero-gravity safety banner — high-visibility warning whenever
+           the recovery launcher is running (real-arm hand-pose mode). -->
+      <ZeroGravityBanner />
 
     </div>
   </div>
@@ -69,6 +91,15 @@ import CameraPanel from './components/CameraPanel.vue';
 import RightSidebar from './components/RightSidebar.vue';
 import RobotViewport from './components/RobotViewport.vue';
 import TimelineControl from './components/TimelineControl.vue';
+import LauncherCard from './components/LauncherCard.vue';
+import ZeroGravityBanner from './components/ZeroGravityBanner.vue';
+// import JointClearanceRow from './components/JointClearanceRow.vue';  // disabled per user
+import { useConnectionStore } from '@/stores/connection';
+
+// Tiered connection state (launcher / backend / hw / WS). The launcher is
+// our anchor — once it's reachable we know whether the backend is up, and
+// only then do we try to open the WebSocket.
+const conn = useConnectionStore();
 
 // State
 const currentMouseTool = ref('hand');
@@ -165,30 +196,68 @@ const splitXyzRgb = (raw) => {
   return { points, colors };
 };
 
-// WebSocket Logic
+// WebSocket Logic — reconnects with exponential backoff (1s → 30s) and only
+// attempts to connect once the launcher reports backend === 'up'. On close,
+// clears stale camera blobs so the page makes it visually obvious the live
+// stream is gone (instead of freezing on the last frame).
 let socket = null;
+let reconnectDelay = 1000;
+let reconnectTimer = null;
+
+const clearStaleCameras = () => {
+  if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(cameraRgbUrl.value);
+  }
+  cameraRgbUrl.value = null;
+  for (const k of ['left', 'right', 'side']) {
+    const u = cameraRgbUrls.value[k];
+    if (u && u.startsWith('blob:')) URL.revokeObjectURL(u);
+    cameraRgbUrls.value[k] = null;
+  }
+};
+
+// Hoisted out of initWebSocket so reconnects don't redefine the global.
+window.sendGripperSet = (distanceMm, side = null) => {
+  const distanceMeters = distanceMm / 1000;
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    const msg = { type: 'gripper_set', distance: distanceMeters };
+    if (side) msg.side = side;
+    socket.send(JSON.stringify(msg));
+  }
+};
 
 const initWebSocket = () => {
-  const wsUrl = 'ws://localhost:8080/ws';
-  socket = new WebSocket(wsUrl);
+  if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+    return;
+  }
+  if (conn.backend !== 'up') {
+    // Backend isn't ready yet — try again soon. The watcher below also kicks
+    // in immediately when conn.backend flips to 'up'.
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(initWebSocket, 1000);
+    return;
+  }
+  socket = new WebSocket(conn.wsUrl);
   socket.binaryType = 'arraybuffer';
-
   window.socket = socket;
 
-  socket.onopen = () => console.log('WS Connected');
-
-  const sendGripperSet = (distanceMm, side = null) => {
-    const distanceMeters = distanceMm / 1000;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      const msg = { type: 'gripper_set', distance: distanceMeters };
-      if (side) msg.side = side;
-      socket.send(JSON.stringify(msg));
-    }
+  socket.onopen = () => {
+    conn.setWsConnected(true);
+    reconnectDelay = 1000;
+    console.log('WS Connected to', conn.wsUrl);
   };
-
-  window.sendGripperSet = sendGripperSet;
-
+  socket.onclose = () => {
+    conn.setWsConnected(false);
+    clearStaleCameras();
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(initWebSocket, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  };
+  socket.onerror = () => {
+    try { socket && socket.close(); } catch { /* ignore */ }
+  };
   socket.onmessage = (event) => {
+    conn.tickWsFrame();
     // Render live state in BOTH modes — during replay the backend physically
     // moves the arm, so the live /ws stream carries the replay motion.
     const data = event.data;
@@ -322,10 +391,10 @@ const fetchTrajectory = async () => {
     // Skip until a recording is actually loaded — avoids a 400 on a bare
     // mode-switch to replay before an episode is selected. /api/replay/status
     // returns {is_loaded:false} with a clean 200, so nothing is logged.
-    const st = await fetch('http://localhost:8080/api/replay/status');
+    const st = await fetch(`${conn.backendUrl}/api/replay/status`);
     if (st.ok && !(await st.json()).is_loaded) return;
 
-    const response = await fetch('http://localhost:8080/api/replay/trajectory');
+    const response = await fetch(`${conn.backendUrl}/api/replay/trajectory`);
     if (response.ok) {
       const data = await response.json();
       localTrajectory.value = data.trajectory || [];
@@ -351,7 +420,7 @@ const fetchChunk = async (startIdx, length) => {
   
   try {
     console.log(`Fetching chunk: ${startIdx} to ${startIdx + length}`);
-    const response = await fetch(`http://localhost:8080/api/replay/chunk?start_idx=${startIdx}&length=${length}`);
+    const response = await fetch(`${conn.backendUrl}/api/replay/chunk?start_idx=${startIdx}&length=${length}`);
     if (response.ok) {
       const arrayBuffer = await response.arrayBuffer();
       const chunkData = msgpack.decode(new Uint8Array(arrayBuffer));
@@ -478,7 +547,7 @@ const updateFrameFromLocal = (frameIdx) => {
 // realtime ones — so it's removed.)
 const driveBackendReplay = async (action, frame = null) => {
   try {
-    await fetch('http://localhost:8080/api/replay/control', {
+    await fetch(`${conn.backendUrl}/api/replay/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(frame === null ? { action } : { action, frame }),
@@ -492,7 +561,7 @@ const startStatusPolling = () => {
   if (playbackInterval) clearInterval(playbackInterval);
   playbackInterval = setInterval(async () => {
     try {
-      const r = await fetch('http://localhost:8080/api/replay/status');
+      const r = await fetch(`${conn.backendUrl}/api/replay/status`);
       if (!r.ok) return;
       const st = await r.json();
       if (typeof st.current_frame === 'number') replayCurrentFrame.value = st.current_frame;
@@ -543,10 +612,20 @@ const handleSeek = (frameIdx) => {
   driveBackendReplay('seek', frameIdx);
 };
 
-onMounted(async () => {
-  // Detect dual-arm mode from backend
+// Re-attempt WS connection the instant the launcher reports the backend
+// is up (avoids waiting a full 1s for the next initWebSocket setTimeout).
+watch(() => conn.backend, (newState) => {
+  if (newState === 'up' && (!socket || socket.readyState !== WebSocket.OPEN)) {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    initWebSocket();
+  }
+});
+
+// Detect dual-arm mode once the backend is reachable, then keep watching in
+// case the backend is restarted in a different mode.
+const fetchSystemInfo = async () => {
   try {
-    const resp = await fetch('http://localhost:8080/system/info');
+    const resp = await fetch(`${conn.backendUrl}/system/info`);
     if (resp.ok) {
       const info = await resp.json();
       dualMode.value = info.dual_mode || false;
@@ -555,15 +634,22 @@ onMounted(async () => {
   } catch (e) {
     console.warn('Failed to fetch system info:', e);
   }
+};
+watch(() => conn.backend, (s) => { if (s === 'up') fetchSystemInfo(); });
 
-  initWebSocket();
+onMounted(() => {
+  conn.startPolling();    // GET /launcher/status every 1s
+  initWebSocket();        // no-op until conn.backend === 'up'
   if (currentMode.value === 'replay') {
     fetchTrajectory();
   }
 });
 
 onUnmounted(() => {
+  conn.stopPolling();
+  conn.stopLogTail();
   stopStatusPolling();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (socket) socket.close();
   if (cameraRgbUrl.value && cameraRgbUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(cameraRgbUrl.value);
@@ -615,5 +701,11 @@ body {
   position: relative;
   display: flex;
   overflow: hidden;
+}
+
+/* Joint clearance strip sits between the viewport and the bottom edge
+ * (or the TimelineControl in replay mode). Stays out of overlay z-index. */
+.clearance-strip {
+  margin: 6px 12px 8px;
 }
 </style>
