@@ -287,31 +287,27 @@ class SimDriver(RobotDriverBase, CameraDriverBase):
         """Per-arm ``T_cam2link6`` (4x4, OpenCV camera frame -> link_6 frame).
 
         Derived from the live ``robot_left.xml`` / ``robot_right.xml`` MJCF
-        chain (must stay in sync with what's actually in those files):
+        wrist-camera poses (see ``_WRIST_CAM_MJCF``), which must stay in sync
+        with the <camera> pos/quat in those files — the sim renders wrist depth
+        from those poses, so the point-cloud fusion extrinsics returned here
+        have to match exactly or the fused cloud ghosts/shifts.
 
-            link_6 -> gripper_base_link : identity (pos=[0,0,0], quat=[1,0,0,0])
-                                          GR100 lobster claw mounts along
-                                          link_6's +Z, no extra rotation.
-            gripper_base_link -> *_end_camera (MuJoCo/OpenGL frame):
-                                          pos=[-0.105, 0, 0.066],
-                                          quat=[0.1830127, 0.6830127,
-                                                -0.6830127, -0.1830127]
-                                          (transformed from archer's
-                                          (0.066, 0, 0.105) by archer's
-                                          gripper_base rotation, so the
-                                          camera ends up at the same
-                                          physical place on the gripper
-                                          as archer_l6y's wrist cam)
+            link_6 -> gripper_base_link : identity (firefly_y6, no extra rotation)
+            gripper_base_link -> *_end_camera : MuJoCo pose in _WRIST_CAM_MJCF
+                                                (calibrated optical pose from
+                                                left_hand.json / right_hand.json)
             * + OpenGL -> OpenCV swap (Y, Z flip).
 
-        Returns ``{"left": T, "right": T}``. Both arms are kinematically
-        identical so the two matrices are equal.
+        Returns ``{"left": T, "right": T}`` — the two arms have different
+        calibrated wrist-camera poses, so the matrices differ.
         """
         if not self._connected:
             return None
         if self._cam2gripper is None:
-            T = self._compute_sim_cam2link6()
-            self._cam2gripper = {"left": T, "right": T.copy()}
+            self._cam2gripper = {
+                "left":  self._compute_sim_cam2link6(*self._WRIST_CAM_MJCF["left"]),
+                "right": self._compute_sim_cam2link6(*self._WRIST_CAM_MJCF["right"]),
+            }
         return self._cam2gripper
 
     # ============== Camera transform helpers ==============
@@ -359,10 +355,26 @@ class SimDriver(RobotDriverBase, CameraDriverBase):
                     out["side"] = _K(side_intri[0])
         self._intrinsics = out or None
 
+    # gripper_base_link -> *_end_camera, in the MuJoCo/OpenGL camera frame.
+    # GENERATED from hand-eye calibration by tools/sync_sim_cameras_from_calib.py
+    # (reads left_hand.json / right_hand.json). The sim renders wrist depth from
+    # the MJCF <camera> poses, which the SAME generator writes from the SAME
+    # JSONs, so these fusion extrinsics stay in sync automatically. Do NOT
+    # hand-edit between the markers — re-run the generator instead.
+    # >>> SYNC_SIM_CAMERAS:_WRIST_CAM_MJCF >>>
+    _WRIST_CAM_MJCF = {
+        "left":  ([-0.0625, 0.0338, 0.0682],
+                  [-0.1491669, -0.6857044, 0.6938724, 0.1615541]),
+        "right": ([-0.0670, 0.0288, 0.0715],
+                  [0.1479058, 0.6974347, -0.6840006, -0.1544408]),
+    }
+    # <<< SYNC_SIM_CAMERAS <<<
+
     @staticmethod
-    def _compute_sim_cam2link6() -> np.ndarray:
+    def _compute_sim_cam2link6(pos, quat) -> np.ndarray:
         """Chain link_6 -> gripper_base_link -> end_camera -> OpenCV.
 
+        ``pos``/``quat`` are the MuJoCo <camera> pose (gripper_base_link frame).
         MuJoCo body pos/quat give the child frame expressed in the parent
         frame, so the resulting homogeneous T maps a point FROM the child
         frame TO the parent frame (p_parent = T @ p_child).
@@ -385,16 +397,8 @@ class SimDriver(RobotDriverBase, CameraDriverBase):
         # link_6 -> gripper_base_link: identity in firefly_y6 (no extra rotation)
         T_link6_gbl = np.eye(4)
 
-        # gripper_base_link -> end_camera (MuJoCo / OpenGL frame).
-        # These values MUST match what's currently in robot_left.xml /
-        # robot_right.xml. They're the result of rotating archer_l6y's
-        # original (pos=(0.066,0,0.105), quat=(0.6123724,...)) by archer's
-        # gripper_base quat (0.7071068, 0, -0.7071068, 0) so the wrist
-        # camera lands at the same physical place on firefly_y6.
-        T_gbl_cam_mj = make_T(
-            quat_to_mat([0.1830127, 0.6830127, -0.6830127, -0.1830127]),
-            [-0.105, 0.0, 0.066],
-        )
+        # gripper_base_link -> end_camera (MuJoCo / OpenGL frame)
+        T_gbl_cam_mj = make_T(quat_to_mat(quat), pos)
 
         # OpenCV camera frame -> MuJoCo camera frame (Y, Z flip)
         T_mj_cv = make_T(np.diag([1.0, -1.0, -1.0]), [0.0, 0.0, 0.0])
