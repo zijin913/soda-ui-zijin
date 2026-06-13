@@ -43,6 +43,18 @@ from fastapi import Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+
+class NoCacheStaticFiles(StaticFiles):
+    """Serve URDF/mesh assets with no-cache so the browser always picks up
+    updated meshes (e.g. after a gripper swap) instead of a stale cached copy."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+
 from fastapi.responses import JSONResponse
 
 from .routes import robot_router, camera_router
@@ -916,7 +928,7 @@ def create_app(
 
     for asset_path in asset_paths:
         if asset_path.exists():
-            app.mount("/assets", StaticFiles(directory=str(asset_path)), name="assets")
+            app.mount("/assets", NoCacheStaticFiles(directory=str(asset_path)), name="assets")
             print(f"[Shell] Static assets mounted from: {asset_path}")
             break
     else:

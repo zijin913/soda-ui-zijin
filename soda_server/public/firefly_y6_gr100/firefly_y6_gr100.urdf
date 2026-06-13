@@ -167,12 +167,13 @@
     </joint>
 
     <!-- ==================== GRIPPER (GR100 lobster claw) ==================== -->
+    <!-- Tianyi 总装 gripper. gripper_base_link = Link_1, mimic multiplier=-1. -->
     <link name="gripper_base_link">
         <inertial>
-            <origin xyz="-0.00386337 0.00001755 0.04222242" rpy="0 0 0" />
-            <mass value="0.47163661" />
-            <inertia ixx="0.00032421" ixy="0.00000064" ixz="0.00004032"
-                     iyy="0.00032388" iyz="0.00000041" izz="0.00022576" />
+            <origin xyz="0.00000 0.00524 0.04602" rpy="0 0 0" />
+            <mass value="0.26211" />
+            <inertia ixx="0.00018658" ixy="-0.00000000" ixz="-0.00000000"
+                     iyy="0.00019724" iyz="-0.00002094" izz="0.00013414" />
         </inertial>
         <visual>
             <origin xyz="0 0 0" rpy="0 0 0" />
@@ -185,17 +186,17 @@
         </collision>
     </link>
     <joint name="gripper_base_joint" type="fixed">
-        <origin xyz="0 0 0" rpy="0 0 0" />
+        <origin xyz="0 0 0" rpy="0 0 1.5707963" />
         <parent link="link_6" />
         <child link="gripper_base_link" />
     </joint>
 
     <link name="gripper_left_link_1">
         <inertial>
-            <origin xyz="0.01344478 -0.02402636 0.03494436" rpy="0 0 0" />
-            <mass value="0.02806607" />
-            <inertia ixx="0.00002286" ixy="0.00000088" ixz="-0.00000130"
-                     iyy="0.00001838" iyz="0.00000883" izz="0.00000630" />
+            <origin xyz="-0.04997 -0.03775 0.01429" rpy="0 0 0" />
+            <mass value="0.02755" />
+            <inertia ixx="0.00000939" ixy="-0.00001395" ixz="0.00000090"
+                     iyy="0.00002786" iyz="0.00000068" izz="0.00003535" />
         </inertial>
         <visual>
             <origin xyz="0 0 0" rpy="0 0 0" />
@@ -208,19 +209,19 @@
         </collision>
     </link>
     <joint name="gripper_left_joint_1" type="revolute">
-        <origin xyz="0 -0.015 0.076799" rpy="0 0 0" />
+        <origin xyz="-0.015 0.01475 0.07679888" rpy="0 1.57079633 -1.57079633" />
         <parent link="gripper_base_link" />
         <child link="gripper_left_link_1" />
-        <axis xyz="-1 0 0" />
+        <axis xyz="0 0 -1" />
         <limit lower="0.0" upper="0.9" effort="5" velocity="10" />
     </joint>
 
     <link name="gripper_right_link_1">
         <inertial>
-            <origin xyz="0.01341406 0.02402380 0.03494613" rpy="0 0 0" />
-            <mass value="0.02806607" />
-            <inertia ixx="0.00002286" ixy="-0.00000087" ixz="-0.00000129"
-                     iyy="0.00001838" iyz="-0.00000883" izz="0.00000629" />
+            <origin xyz="-0.04997 0.03775 0.01413" rpy="0 0 0" />
+            <mass value="0.02755" />
+            <inertia ixx="0.00000939" ixy="0.00001395" ixz="0.00000086"
+                     iyy="0.00002786" iyz="-0.00000065" izz="0.00003535" />
         </inertial>
         <visual>
             <origin xyz="0 0 0" rpy="0 0 0" />
@@ -233,12 +234,12 @@
         </collision>
     </link>
     <joint name="gripper_right_joint_1" type="revolute">
-        <origin xyz="0 0.015 0.076799" rpy="0 0 0" />
+        <origin xyz="0.015 0.01475 0.07679888" rpy="0 1.57079633 -1.57079633" />
         <parent link="gripper_base_link" />
         <child link="gripper_right_link_1" />
-        <axis xyz="1 0 0" />
-        <limit lower="0.0" upper="0.9" effort="5" velocity="10" />
-        <mimic joint="gripper_left_joint_1" multiplier="1.0" offset="0" />
+        <axis xyz="0 0 -1" />
+        <limit lower="-0.9" upper="0.0" effort="5" velocity="10" />
+        <mimic joint="gripper_left_joint_1" multiplier="-1.0" offset="0" />
     </joint>
 
     <link name="ee_link">
