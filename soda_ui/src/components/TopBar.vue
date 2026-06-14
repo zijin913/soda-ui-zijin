@@ -33,6 +33,17 @@
           <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
         </button>
 
+        <!-- HOME — move both arms to home pose. During teleop routes through
+             teleop_quest's 'h' key (clears pending target + pauses) so it
+             doesn't race teleop's command stream. Otherwise POSTs /robot/home. -->
+        <button class="tool-btn home-btn"
+                :disabled="!isBackendUp || conn.homing"
+                @click="onHome"
+                :title="!isBackendUp ? backendDisabledTitle :
+                        conn.homing ? 'Homing in progress…' : 'Move both arms to home pose'">
+          <span class="home-label">{{ conn.homing ? 'HOMING…' : 'HOME' }}</span>
+        </button>
+
         <!-- STOP / Recovery — opens a phosphor confirm modal; on real mode
              confirms transition into zero-gravity recovery handled fully in-UI
              by RecoveryModal (no more OpenCV popup). -->
@@ -199,6 +210,15 @@ const toggleTeleop = async () => {
     }
   } catch (error) {
     console.error('Failed to toggle teleop:', error);
+  }
+};
+
+// HOME — connection store handles the teleop/non-teleop routing.
+const onHome = async () => {
+  const r = await conn.goHome();
+  if (!r.ok) {
+    conn.lastError = `Go home failed: ${r.error}`;
+    console.error('Go home failed:', r.error);
   }
 };
 
@@ -514,6 +534,34 @@ onMounted(() => {
 }
 
 /* STOP — Pi-style diagonal red stripes + phosphor glow. */
+/* HOME — calm cyan utility button; routes through teleop_quest's 'h' key
+   while teleop is up so it doesn't race the active command stream. */
+.home-btn {
+  background: rgba(8, 28, 36, 0.55);
+  border: 1px solid rgba(96, 184, 208, 0.5);
+  transition: all 0.15s;
+}
+.home-btn:hover:not(:disabled) {
+  border-color: rgba(96, 184, 208, 0.9);
+  box-shadow: 0 0 14px rgba(96, 184, 208, 0.55);
+  background: rgba(10, 36, 48, 0.85);
+}
+.home-btn:disabled {
+  border-color: rgba(96, 184, 208, 0.18);
+  background: transparent;
+}
+.home-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #80d0e8;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 6px rgba(96, 184, 208, 0.55);
+}
+.home-btn:disabled .home-label {
+  color: #62717f;
+  text-shadow: none;
+}
+
 .stop-btn {
   background-image:
     repeating-linear-gradient(45deg,

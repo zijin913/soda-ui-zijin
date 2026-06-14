@@ -71,6 +71,13 @@ export const useConnectionStore = defineStore('connection', () => {
   const teleopRunning = ref<boolean>(false)
   const teleopPid = ref<number | null>(null)
 
+  // Teleop overlay state — pushed by /ws/teleop_ui (backend TeleopBridge),
+  // populated/cleared automatically when teleopRunning flips.
+  const teleopStatus = ref<string>('')         // e.g. "READY", "RECORDING", "ASK_RECORD"
+  const teleopConnected = ref<boolean>(false)  // bridge ↔ teleop_quest socket up
+  const teleopClosed = ref<boolean>(false)     // bridge saw socket close (session ended)
+  const teleopOverlayDismissed = ref<boolean>(false)
+
   // RecoveryModal "DISMISS OVERLAY" toggle. When true the fullscreen modal is
   // hidden but the slim ZeroGravityBanner stays visible and can re-open the
   // modal by flipping this back to false.
@@ -265,6 +272,132 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
+  // ── teleop key + WS ─────────────────────────────────────────────
+  async function sendTeleopKey(key: string): Promise<{ ok: boolean; error?: string }> {
+    if (!key || key.length === 0) return { ok: false, error: 'empty key' }
+    try {
+      const r = await fetch(`${backendUrl.value}/api/teleop/key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key[0] }),
+      })
+      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  }
+
+  // Graceful teleop shutdown — what the original teleop_viewer.py did on 'q':
+  // POST /api/teleop/stop so the backend SIGINTs teleop_quest (saves any
+  // in-progress episode), closes the bridge, and clears all state. Sending a
+  // raw 'q' key to teleop_quest also exits it, but bypasses bridge cleanup.
+  async function stopTeleop(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}/api/teleop/stop`, { method: 'POST' })
+      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  }
+
+  // Move both arms to home pose. Active state pinging at ~3 Hz lets the UI
+  // disable the button + show "HOMING…" while the backend trajectory runs.
+  const homing = ref<boolean>(false)
+  async function goHome(): Promise<{ ok: boolean; error?: string }> {
+    if (homing.value) return { ok: false, error: 'already homing' }
+    homing.value = true
+    try {
+      // During teleop the command stream owns the shared ZMQ client; calling
+      // /robot/home directly would race teleop's setpoint. Route through the
+      // teleop_quest 'h' key instead — it clears the pending target, calls
+      // /robot/home internally, then resets the controllers.
+      if (teleopRunning.value) {
+        const r = await sendTeleopKey('h')
+        return r
+      }
+      const r = await fetch(`${backendUrl.value}/robot/home`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
+      const data = await r.json().catch(() => ({}))
+      if (data && data.success === false) {
+        return { ok: false, error: data.message || 'home failed' }
+      }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    } finally {
+      homing.value = false
+    }
+  }
+
+  // /ws/teleop_ui client. Backend pushes:
+  //   {type:"snapshot"|"status"|"connected"|"closed"|"error", ...}
+  let teleopWs: WebSocket | null = null
+  let teleopWsReconnectTimer: number | null = null
+  function openTeleopWs(): void {
+    if (teleopWs && (teleopWs.readyState === WebSocket.OPEN ||
+                      teleopWs.readyState === WebSocket.CONNECTING)) return
+    const url = wsUrl.value.replace(/\/ws$/, '/ws/teleop_ui')
+    try {
+      teleopWs = new WebSocket(url)
+    } catch {
+      teleopWs = null
+      return
+    }
+    teleopWs.onopen = () => {
+      teleopClosed.value = false
+    }
+    teleopWs.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data)
+        if (d.type === 'snapshot') {
+          teleopStatus.value = d.status ?? ''
+          teleopConnected.value = !!d.connected
+          teleopClosed.value = !!d.closed
+        } else if (d.type === 'status') {
+          teleopStatus.value = d.status ?? ''
+        } else if (d.type === 'connected') {
+          teleopConnected.value = true
+        } else if (d.type === 'closed') {
+          teleopClosed.value = true
+          teleopConnected.value = false
+        } else if (d.type === 'error') {
+          lastError.value = `Teleop bridge: ${d.message}`
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    teleopWs.onclose = () => {
+      teleopWs = null
+      // Auto-reconnect while teleop is still flagged running.
+      if (teleopRunning.value && !teleopWsReconnectTimer) {
+        teleopWsReconnectTimer = window.setTimeout(() => {
+          teleopWsReconnectTimer = null
+          if (teleopRunning.value) openTeleopWs()
+        }, 800)
+      }
+    }
+    teleopWs.onerror = () => { /* let onclose handle reconnect */ }
+  }
+  function closeTeleopWs(): void {
+    if (teleopWsReconnectTimer) {
+      window.clearTimeout(teleopWsReconnectTimer)
+      teleopWsReconnectTimer = null
+    }
+    if (teleopWs) {
+      try { teleopWs.close() } catch { /* */ }
+      teleopWs = null
+    }
+    teleopStatus.value = ''
+    teleopConnected.value = false
+    teleopClosed.value = false
+    teleopOverlayDismissed.value = false
+  }
+
   // Emergency: SIGKILL the whole stack. Called by ForceKillModal's hold-to-
   // confirm action. Launcher stays alive so the UI keeps polling.
   async function forceKill(): Promise<{ ok: boolean; error?: string; killed?: number }> {
@@ -347,6 +480,8 @@ export const useConnectionStore = defineStore('connection', () => {
     wsConnected, wsFps, wsLatencyMs,
     cpuPct, ramPct, backendRssMb, hwRssMb,
     teleopRunning, teleopPid,
+    teleopStatus, teleopConnected, teleopClosed, teleopOverlayDismissed,
+    homing,
     recoveryModalDismissed, recoveryStarting, recoveryFinishing,
     stopConfirmOpen, forceKillOpen,
     hwLogs, backendLogs,
@@ -359,6 +494,7 @@ export const useConnectionStore = defineStore('connection', () => {
     openStopConfirm, closeStopConfirm, openForceKill, closeForceKill,
     confirmStop,
     beginRecoveryStarting, endRecoveryStarting,
+    sendTeleopKey, stopTeleop, goHome, openTeleopWs, closeTeleopWs,
     startLogTail, stopLogTail, fetchLogs,
     tickWsFrame, setWsConnected, setWsLatency,
   }

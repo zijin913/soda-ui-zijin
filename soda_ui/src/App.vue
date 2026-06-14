@@ -80,6 +80,10 @@
            visible as a slim header reminder even after the modal is dismissed. -->
       <ZeroGravityBanner />
 
+      <!-- 5b. Teleop banner — same pattern as zero-g: shows when the teleop
+           overlay was dismissed but teleop is still active. Click to re-open. -->
+      <TeleopBanner />
+
     </div>
 
     <!-- 6. Zero-gravity recovery overlay — fullscreen phosphor modal shown
@@ -103,6 +107,16 @@
       :open="conn.forceKillOpen"
       @close="conn.closeForceKill"
     />
+
+    <!-- 9. Teleop overlay — fullscreen phosphor modal shown while teleop is
+         running. Replaces the OpenCV viewer popup; reuses our existing
+         per-camera blob URLs (no new camera connection on the backend). -->
+    <TeleopOverlay :cameras="cameraRgbUrls" />
+
+    <!-- 10. Persistent log panel — floats bottom-right, color-coded backend
+         and hw streams. Stays visible after LauncherCard dismisses so the
+         user can keep an eye on the streams during normal operation. -->
+    <LogPanel />
   </div>
 </template>
 
@@ -119,6 +133,9 @@ import ZeroGravityBanner from './components/ZeroGravityBanner.vue';
 import RecoveryModal from './components/RecoveryModal.vue';
 import StopConfirmModal from './components/StopConfirmModal.vue';
 import ForceKillModal from './components/ForceKillModal.vue';
+import LogPanel from './components/LogPanel.vue';
+import TeleopOverlay from './components/TeleopOverlay.vue';
+import TeleopBanner from './components/TeleopBanner.vue';
 // import JointClearanceRow from './components/JointClearanceRow.vue';  // disabled per user
 import { useConnectionStore } from '@/stores/connection';
 
@@ -662,6 +679,13 @@ const fetchSystemInfo = async () => {
   }
 };
 watch(() => conn.backend, (s) => { if (s === 'up') fetchSystemInfo(); });
+
+// Open /ws/teleop_ui whenever teleop is running so the TeleopOverlay receives
+// live status pushes from the backend TeleopBridge. Close on teleop end.
+watch(() => conn.teleopRunning, (running) => {
+  if (running) conn.openTeleopWs();
+  else conn.closeTeleopWs();
+}, { immediate: true });
 
 onMounted(() => {
   conn.startPolling();    // GET /launcher/status every 1s
