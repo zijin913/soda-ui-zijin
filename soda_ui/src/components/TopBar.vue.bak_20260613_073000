@@ -33,23 +33,13 @@
           <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
         </button>
 
-        <!-- STOP / Recovery — opens a phosphor confirm modal; on real mode
-             confirms transition into zero-gravity recovery handled fully in-UI
-             by RecoveryModal (no more OpenCV popup). -->
-        <button class="tool-btn stop-btn" @click="conn.openStopConfirm"
+        <!-- STOP / Recovery — kill EVERYTHING and start zero-gravity. Routes
+             through /api/shutdown when the backend is alive, otherwise asks the
+             launcher to spawn recover_zerog.py directly. Same end state. -->
+        <button class="tool-btn stop-btn" @click="shutdownAll"
                 :disabled="!canStop"
-                :title="canStop ? 'Stop all processes; on real mode you get an in-UI zero-gravity recovery overlay' : 'Nothing running'">
+                :title="canStop ? 'Stop all processes and enter zero-gravity (hand-pose the arms back to home); then press q/ESC in the popup on the robot host to exit' : 'Nothing running'">
           <span class="stop-label">STOP</span>
-        </button>
-
-        <!-- PANIC / Force-Kill — emergency SIGKILL of the whole stack. Always
-             enabled (even when STOP is disabled), opens a hazard-stripe modal
-             with a 2-second hold-to-confirm ring. -->
-        <button class="tool-btn panic-btn"
-                @click="conn.openForceKill"
-                title="Emergency: SIGKILL all processes (hold-to-confirm)">
-          <span class="panic-glyph">⚠</span>
-          <span class="panic-label">PANIC</span>
         </button>
 
         <!-- Recordings Dropdown (only in replay mode) -->
@@ -117,9 +107,6 @@
         <StatusRail />
       </div>
     </div>
-
-    <!-- Modals are mounted at App.vue root (stacking-context reasons), TopBar
-         just dispatches open events through the connection store. -->
   </header>
 </template>
 
@@ -202,8 +189,33 @@ const toggleTeleop = async () => {
   }
 };
 
-// STOP / PANIC: both buttons just dispatch to the connection store, which
-// flips a global modal-open ref. App.vue mounts the actual modals at root.
+// STOP / Recovery: kill everything + start zero-gravity for hand-posing.
+// Destructive — confirm first. The backend spawns a detached helper that
+// survives its own death and shows a popup on the robot host.
+const shutdownAll = async () => {
+  // Always route through the launcher — it knows the mode and dispatches:
+  //   sim:  kill_servers.sh (just kill everything; no zero-gravity)
+  //   real: recover_zerog flow (kill + gravity-comp + OpenCV hand-pose popup)
+  const isReal = conn.mode === 'real';
+  const ok = window.confirm(
+    isReal
+      ? 'Stop all processes and enter zero-gravity?\n\n' +
+        'The arms will become free to move by hand (gravity compensation).\n' +
+        'On the robot host popup: hand-pose the arms back to home, then press\n' +
+        'q / ESC to exit the whole program.'
+      : 'Stop the sim and kill all processes?',
+  );
+  if (!ok) return;
+  const r = await conn.stop();
+  if (!r.ok) {
+    window.alert(`Stop failed: ${r.error}`);
+    return;
+  }
+  if (isReal) {
+    window.alert('Stopping all processes and starting zero-gravity.\n' +
+                 'On the robot host popup: hand-pose the arms back to home, then press q / ESC to exit.');
+  }
+};
 
 
 const fetchRecordings = async () => {
@@ -545,47 +557,6 @@ onMounted(() => {
 .stop-btn:disabled .stop-label {
   color: #62717f;
   text-shadow: none;
-}
-
-/* PANIC — yellow/black hazard stripes + slow pulse so it draws the eye in
-   emergencies. Distinct from STOP's red stripes. Always enabled. */
-.panic-btn {
-  background-image:
-    repeating-linear-gradient(-45deg,
-      rgba(255,176,32,0.42) 0px, rgba(255,176,32,0.42) 5px,
-      rgba(20,16,8,0.55) 5px, rgba(20,16,8,0.55) 11px);
-  border: 1px solid rgba(255,176,32,0.55);
-  transition: all 0.15s;
-  display: flex; align-items: center; gap: 5px;
-  animation: panic-glow 2.6s ease-in-out infinite;
-  margin-left: 4px;
-  padding-left: 9px; padding-right: 9px;
-}
-.panic-btn:hover {
-  border-color: rgba(255,176,32,1);
-  box-shadow: 0 0 16px rgba(255,176,32,0.7);
-  background-image:
-    repeating-linear-gradient(-45deg,
-      rgba(255,176,32,0.7) 0px, rgba(255,176,32,0.7) 5px,
-      rgba(60,40,8,0.7) 5px, rgba(60,40,8,0.7) 11px);
-  animation: none;
-}
-.panic-glyph {
-  font-size: 14px;
-  color: #ffd060;
-  text-shadow: 0 0 8px rgba(255,208,96,0.85);
-  line-height: 1;
-}
-.panic-label {
-  font-size: 11px;
-  font-weight: 900;
-  color: #ffb020;
-  letter-spacing: 2px;
-  text-shadow: 0 0 6px rgba(255,176,32,0.75);
-}
-@keyframes panic-glow {
-  0%, 100% { box-shadow: 0 0 6px rgba(255,176,32,0.15); }
-  50%      { box-shadow: 0 0 16px rgba(255,176,32,0.55); }
 }
 
 .replay-controls {

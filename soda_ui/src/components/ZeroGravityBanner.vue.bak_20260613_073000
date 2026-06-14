@@ -1,32 +1,16 @@
 <template>
   <Transition name="zg-slide">
-    <button
-      v-if="conn.zeroGravityActive"
-      class="zg-banner phosphor"
-      :title="conn.recoveryModalDismissed
-        ? 'Click to re-open the recovery overlay'
-        : 'Recovery overlay is open below'"
-      @click="onClick"
-    >
+    <div v-if="conn.zeroGravityActive" class="zg-banner phosphor">
       <span class="zg-led" />
       <span class="zg-label">ZERO-GRAVITY ACTIVE — ARMS ARE FREE TO MOVE</span>
-      <span class="zg-hint">
-        <span v-if="conn.recoveryModalDismissed">click here to re-open recovery controls</span>
-        <span v-else>push arms to <kbd>HOME</kbd>, then press <kbd>DONE</kbd> in the overlay</span>
-      </span>
-    </button>
+      <span class="zg-hint">on the robot host, hand-pose the arms to home then press <kbd>q</kbd> / <kbd>ESC</kbd> in the recovery popup</span>
+    </div>
   </Transition>
 </template>
 
 <script setup>
 import { useConnectionStore } from '@/stores/connection';
 const conn = useConnectionStore();
-
-// Clicking the banner re-opens the RecoveryModal if it was dismissed. If the
-// modal is already open this is a no-op (the modal sits on top of the banner).
-const onClick = () => {
-  conn.recoveryModalDismissed = false;
-};
 </script>
 
 <style scoped>
@@ -46,16 +30,7 @@ const onClick = () => {
   font-size: 12px;
   color: #ffb020;
   animation: zg-pulse 1.8s ease-in-out infinite;
-  cursor: pointer;
-  transition: box-shadow 0.18s ease, transform 0.18s ease;
-  text-align: left;
 }
-.zg-banner:hover {
-  box-shadow: 0 0 36px rgba(255,176,32,0.55),
-              0 1px 0 rgba(255,255,255,0.04) inset;
-  transform: translateY(-1px);
-}
-.zg-banner:active { transform: translateY(0); }
 .zg-led {
   width: 14px; height: 14px; border-radius: 50%;
   background: #ffb020;

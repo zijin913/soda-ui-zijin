@@ -234,6 +234,19 @@ const initScene = () => {
   loadURDF();
   fetchGripperJoints();
 
+  // Retry URDF + gripper-joints load when the backend transitions to "up".
+  // Without this, opening the UI BEFORE the stack is launched leaves the
+  // initial /urdf fetch failing silently; the arm model only appears after
+  // a manual page refresh. With the watcher, clicking LAUNCH and waiting
+  // for the backend to come up triggers an automatic re-load.
+  watch(() => conn.backend, (be) => {
+    if (be !== 'up') return;
+    const alreadyLoaded = robotModel || Object.keys(robotModels).length > 0;
+    if (alreadyLoaded) return;
+    loadURDF();
+    fetchGripperJoints();
+  });
+
   const animate = () => {
     requestAnimationFrame(animate);
 

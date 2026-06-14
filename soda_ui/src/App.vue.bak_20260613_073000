@@ -76,33 +76,10 @@
       <LauncherCard v-if="!conn.isOperational" />
 
       <!-- 5. Zero-gravity safety banner — high-visibility warning whenever
-           the recovery launcher is running (real-arm hand-pose mode). Stays
-           visible as a slim header reminder even after the modal is dismissed. -->
+           the recovery launcher is running (real-arm hand-pose mode). -->
       <ZeroGravityBanner />
 
     </div>
-
-    <!-- 6. Zero-gravity recovery overlay — fullscreen phosphor modal shown
-         whenever conn.zeroGravityActive flips true. Replaces the OpenCV
-         popup that recover_zerog.py used to host on the robot desktop. -->
-    <RecoveryModal />
-
-    <!-- 7. Stop confirmation (phosphor in-UI replacement for window.confirm).
-         Lives at root so it stacks above LauncherCard regardless of where the
-         caller (TopBar / LauncherCard) is mounted. -->
-    <StopConfirmModal
-      :open="conn.stopConfirmOpen"
-      :is-real="conn.mode === 'real'"
-      @confirm="conn.confirmStop"
-      @cancel="conn.closeStopConfirm"
-    />
-
-    <!-- 8. Emergency PANIC modal (hold-to-confirm SIGKILL). Also root-mounted
-         so it always sits on top of LauncherCard / banners / anything else. -->
-    <ForceKillModal
-      :open="conn.forceKillOpen"
-      @close="conn.closeForceKill"
-    />
   </div>
 </template>
 
@@ -116,9 +93,6 @@ import RobotViewport from './components/RobotViewport.vue';
 import TimelineControl from './components/TimelineControl.vue';
 import LauncherCard from './components/LauncherCard.vue';
 import ZeroGravityBanner from './components/ZeroGravityBanner.vue';
-import RecoveryModal from './components/RecoveryModal.vue';
-import StopConfirmModal from './components/StopConfirmModal.vue';
-import ForceKillModal from './components/ForceKillModal.vue';
 // import JointClearanceRow from './components/JointClearanceRow.vue';  // disabled per user
 import { useConnectionStore } from '@/stores/connection';
 

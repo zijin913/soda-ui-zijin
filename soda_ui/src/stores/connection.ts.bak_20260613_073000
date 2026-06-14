@@ -71,32 +71,6 @@ export const useConnectionStore = defineStore('connection', () => {
   const teleopRunning = ref<boolean>(false)
   const teleopPid = ref<number | null>(null)
 
-  // RecoveryModal "DISMISS OVERLAY" toggle. When true the fullscreen modal is
-  // hidden but the slim ZeroGravityBanner stays visible and can re-open the
-  // modal by flipping this back to false.
-  const recoveryModalDismissed = ref<boolean>(false)
-
-  // Transient flags driving RecoveryModal's STARTING and FINISHING phases.
-  // recoveryStarting goes true the instant the user confirms a stop and clears
-  // either when zeroGravityActive flips true or after a safety timeout.
-  // recoveryFinishing goes true when the user hits DONE and clears when
-  // zeroGravityActive flips false.
-  const recoveryStarting = ref<boolean>(false)
-  const recoveryFinishing = ref<boolean>(false)
-  let recoveryStartingTimer: number | null = null
-
-  // Global modal mount state. We mount the modals at App.vue root so they
-  // sit in the same stacking context as LauncherCard (which has its own
-  // overlay) — z-index alone isn't enough when modals were nested inside
-  // TopBar (whose own stacking context capped them below LauncherCard's
-  // z-index: 200). Components anywhere call openStopConfirm / openForceKill.
-  const stopConfirmOpen = ref<boolean>(false)
-  const forceKillOpen = ref<boolean>(false)
-  function openStopConfirm() { stopConfirmOpen.value = true }
-  function closeStopConfirm() { stopConfirmOpen.value = false }
-  function openForceKill() { forceKillOpen.value = true }
-  function closeForceKill() { forceKillOpen.value = false }
-
   const launcherUrl = computed(defaultLauncherUrl)
   const backendUrl = computed(defaultBackendUrl)
   const wsUrl = computed(defaultWsUrl)
@@ -218,69 +192,6 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
-  // Called by StopConfirmModal's CONFIRM event. Closes the modal, kicks off
-  // RecoveryModal's STARTING phase (real mode only), then calls launcher /stop.
-  async function confirmStop(): Promise<void> {
-    closeStopConfirm()
-    const isReal = mode.value === 'real'
-    if (isReal) beginRecoveryStarting()
-    const r = await stop()
-    if (!r.ok) {
-      lastError.value = `Stop failed: ${r.error}`
-      endRecoveryStarting()
-    }
-  }
-
-  // Mark that we just kicked off a stop so RecoveryModal can render its
-  // STARTING phase (boot-log animation) until zero-gravity actually comes up.
-  // Safety timeout: clear after 30s so we don't get stuck if zero-g fails.
-  function beginRecoveryStarting(): void {
-    recoveryStarting.value = true
-    if (recoveryStartingTimer !== null) window.clearTimeout(recoveryStartingTimer)
-    recoveryStartingTimer = window.setTimeout(() => {
-      recoveryStarting.value = false
-      recoveryStartingTimer = null
-    }, 30_000)
-  }
-  function endRecoveryStarting(): void {
-    recoveryStarting.value = false
-    if (recoveryStartingTimer !== null) {
-      window.clearTimeout(recoveryStartingTimer)
-      recoveryStartingTimer = null
-    }
-  }
-
-  // Called by RecoveryModal's "DONE" button. Kills zero-gravity launcher +
-  // servers, returns the launcher to the idle state (LauncherCard reappears).
-  async function finishRecovery(): Promise<{ ok: boolean; error?: string }> {
-    try {
-      const r = await fetch(`${launcherUrl.value}/launcher/recovery/finish`, {
-        method: 'POST',
-      })
-      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
-      void pollOnce()
-      return { ok: true }
-    } catch (e) {
-      return { ok: false, error: String(e) }
-    }
-  }
-
-  // Emergency: SIGKILL the whole stack. Called by ForceKillModal's hold-to-
-  // confirm action. Launcher stays alive so the UI keeps polling.
-  async function forceKill(): Promise<{ ok: boolean; error?: string; killed?: number }> {
-    try {
-      const r = await fetch(`${launcherUrl.value}/launcher/force_kill`, {
-        method: 'POST',
-      })
-      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
-      const data = await r.json().catch(() => ({}))
-      void pollOnce()
-      return { ok: true, killed: data.killed }
-    } catch (e) {
-      return { ok: false, error: String(e) }
-    }
-  }
-
   // ── log tail (used by LauncherCard while open) ─────────────────────
   const hwLogs = ref<string[]>([])
   const backendLogs = ref<string[]>([])
@@ -347,18 +258,13 @@ export const useConnectionStore = defineStore('connection', () => {
     wsConnected, wsFps, wsLatencyMs,
     cpuPct, ramPct, backendRssMb, hwRssMb,
     teleopRunning, teleopPid,
-    recoveryModalDismissed, recoveryStarting, recoveryFinishing,
-    stopConfirmOpen, forceKillOpen,
     hwLogs, backendLogs,
     // urls
     launcherUrl, backendUrl, wsUrl,
     isOperational,
     // actions
     startPolling, stopPolling, pollOnce, pollMetricsOnce, pollTeleopOnce,
-    launch, stop, finishRecovery, forceKill,
-    openStopConfirm, closeStopConfirm, openForceKill, closeForceKill,
-    confirmStop,
-    beginRecoveryStarting, endRecoveryStarting,
+    launch, stop,
     startLogTail, stopLogTail, fetchLogs,
     tickWsFrame, setWsConnected, setWsLatency,
   }

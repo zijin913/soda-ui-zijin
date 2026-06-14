@@ -40,7 +40,7 @@ $ python -m soda_launcher</pre>
           <button class="btn-launch" :disabled="!canLaunch" @click="onLaunch">
             <span class="btn-glyph">▶</span> LAUNCH
           </button>
-          <button class="btn-stop" :disabled="!canStop" @click="conn.openStopConfirm">
+          <button class="btn-stop" :disabled="!canStop" @click="onStop">
             <span class="btn-glyph">■</span> STOP
           </button>
         </section>
@@ -84,7 +84,6 @@ $ python -m soda_launcher</pre>
         </section>
       </template>
     </div>
-
   </div>
 </template>
 
@@ -149,8 +148,20 @@ async function onLaunch() {
   if (!r.ok) actionError.value = r.error || 'launch failed';
 }
 
-// STOP: handled globally via conn.openStopConfirm() / conn.confirmStop().
-// Modal is mounted in App.vue so it stacks correctly above this card.
+async function onStop() {
+  const isReal = conn.mode === 'real';
+  if (!confirm(
+    isReal
+      ? 'Stop everything and enter zero-gravity?\n\n' +
+        'The arms will become free to move by hand. On the robot host an OpenCV ' +
+        'popup will appear — hand-pose the arms back to home, then press q / ESC ' +
+        'in that popup to shut the stack down.'
+      : 'Stop the sim and kill all processes?',
+  )) return;
+  actionError.value = null;
+  const r = await conn.stop();
+  if (!r.ok) actionError.value = r.error || 'stop failed';
+}
 
 onMounted(() => { conn.startLogTail(); });
 onUnmounted(() => { conn.stopLogTail(); });
