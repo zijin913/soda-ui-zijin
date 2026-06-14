@@ -663,22 +663,33 @@ onUnmounted(() => {
 </script>
 
 <style>
-/* Global Layout Styles */
+/* Global Layout Styles — phosphor industrial control-room palette. */
 body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-family: 'Inter', sans-serif;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono",
+               "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  background: #06080b;
 }
 
 .app-root {
   width: 100vw;
   height: 100vh;
-  background-color: #303130;
-  background-image: radial-gradient(#444 1.5px, transparent 1.5px);
-  background-size: 24px 24px;
-  font-family: 'Inter', sans-serif;
-  color: #ffffff;
+  background-color: #06080b;
+  /* Pi's 34px hairline grid + faint vignette wash. */
+  background-image:
+    radial-gradient(120% 90% at 50% -10%, rgba(40,60,80,0.10), transparent 60%),
+    radial-gradient(140% 120% at 50% 120%, rgba(255,176,32,0.04), transparent 55%),
+    linear-gradient(#19212b 1px, transparent 1px),
+    linear-gradient(90deg, #19212b 1px, transparent 1px);
+  background-size: auto, auto, 34px 34px, 34px 34px;
+  background-position: 0 0, 0 0, -1px -1px, -1px -1px;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono",
+               "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  color: #c6d3e0;
+  letter-spacing: 0.2px;
+  -webkit-font-smoothing: antialiased;
   overflow: hidden;
   position: relative;
   display: flex;

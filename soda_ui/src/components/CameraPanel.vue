@@ -56,11 +56,13 @@ const subLabel = computed(() => {
 
 <style scoped>
 .floating-panel {
-  background: rgba(29, 29, 29, 0.9);
-  border-radius: 32px;
-  padding: 20px;
-  backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, #10161e, #0d1218);
+  border: 1px solid #27323f;
+  border-radius: 8px;
+  padding: 12px 14px;
+  backdrop-filter: blur(6px);
   z-index: 20;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
 }
 
 .camera-panel {
@@ -85,17 +87,22 @@ const subLabel = computed(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 12px;
-  color: white;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  color: #c6d3e0;
 }
+.panel-header :deep(svg) { color: #ffb020; }
 
 .camera-feed {
   width: 100%;
-  height: 186px;
+  height: 206px;
   background: #000;
-  border-radius: 16px;
+  border: 1px solid #19212b;
+  border-radius: 4px;
   overflow: hidden;
   position: relative;
   display: flex;

@@ -108,50 +108,58 @@ const onSeek = (event) => {
   left: 0;
   width: 100%;
   height: 90px;
-  background: transparent;
+  background: linear-gradient(180deg, transparent, rgba(13,18,24,0.7));
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 8px;
+  padding-top: 10px;
   box-sizing: border-box;
   z-index: 100;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 /* Controls */
 .playback-controls {
   display: flex;
   align-items: center;
-  gap: 24px;
-  margin-bottom: 4px;
+  gap: 18px;
+  margin-bottom: 6px;
 }
 
 .control-btn {
-  background: transparent;
-  border: none;
+  background: #0a0d12;
+  border: 1px solid #27323f;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  transition: background 0.2s;
+  border-radius: 4px;
+  color: #c6d3e0;
+  transition: all 0.15s;
 }
 
 .control-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #19212b;
+  border-color: #ffb020;
+  color: #ffb020;
 }
 
 .control-btn.small {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
 }
 
 .control-btn.large {
-  width: 40px;
-  height: 40px;
-  background: rgba(255, 255, 255, 0.1);
+  width: 42px;
+  height: 42px;
+  background: #221808;
+  border-color: #5a4214;
+  color: #ffb020;
+  box-shadow: 0 0 10px rgba(255,176,32,0.2);
 }
 .control-btn.large:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: #3a2811;
+  box-shadow: 0 0 16px rgba(255,176,32,0.4);
 }
 
 /* Timeline Row */
@@ -163,10 +171,11 @@ const onSeek = (event) => {
 }
 
 .time-display {
-  font-family: 'Inter', monospace;
-  font-size: 13px;
-  color: #FFFFFF;
-  opacity: 0.8;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: #c6d3e0;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.8px;
   min-width: 80px;
   text-align: right;
   white-space: nowrap;
@@ -181,13 +190,14 @@ const onSeek = (event) => {
   align-items: center;
 }
 
-/* The visual gray track */
+/* The visual track — phosphor dark with hairline border. */
 .track-bg {
   position: absolute;
   width: 100%;
-  height: 8px;
-  background: #585863;
-  border-radius: 4px;
+  height: 6px;
+  background: #06080b;
+  border: 1px solid #19212b;
+  border-radius: 3px;
   top: 50%;
   transform: translateY(-50%);
 }
@@ -203,7 +213,7 @@ const onSeek = (event) => {
   z-index: 10;
 }
 
-/* Custom Pointer */
+/* Custom Pointer — phosphor amber. */
 .custom-pointer {
   position: absolute;
   top: -4px;
@@ -219,14 +229,16 @@ const onSeek = (event) => {
 .pointer-head {
   width: 13px;
   height: 12px;
-  background: #F7F7F7;
+  background: #ffb020;
   clip-path: polygon(0 0, 100% 0, 50% 100%);
   flex-shrink: 0;
+  filter: drop-shadow(0 0 4px rgba(255,176,32,0.6));
 }
 
 .pointer-line {
   width: 2px;
   flex: 1;
-  background: #F7F7F7;
+  background: #ffb020;
+  box-shadow: 0 0 6px rgba(255,176,32,0.6);
 }
 </style>

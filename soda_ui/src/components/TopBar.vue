@@ -310,58 +310,69 @@ onMounted(() => {
 }
 
 .top-bar-content {
-  background: #141414;
-  border-radius: 24px;
+  background: linear-gradient(180deg, #10161e, #0d1218);
+  border: 1px solid #27323f;
+  border-radius: 8px;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 14px;
   position: relative;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset,
+              0 6px 18px rgba(0,0,0,0.4);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 .logo-box {
-  width: 58px;
-  height: 58px;
-  background: #2D2F31;
-  border-radius: 18px;
+  width: 56px;
+  height: 56px;
+  background: #06080b;
+  border: 1px solid #19212b;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 20px;
+  margin-right: 18px;
 }
 
 .toolbar-group {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
 }
 
 .divider {
   width: 1px;
-  height: 40px;
-  background: #424548;
-  margin: 0 8px;
+  height: 36px;
+  background: #19212b;
+  margin: 0 6px;
 }
 
 .tool-btn {
-  width: 58px;
-  height: 58px;
-  border: none;
+  width: 54px;
+  height: 54px;
+  border: 1px solid transparent;
   background: transparent;
-  border-radius: 18px;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  color: #c6d3e0;
 }
 
-.tool-btn:hover:not(:disabled), .tool-btn.active {
-  background: #2D2F31;
+.tool-btn:hover:not(:disabled) {
+  background: #19212b;
+  border-color: #27323f;
+}
+.tool-btn.active {
+  background: #10161e;
+  border-color: #27323f;
 }
 .tool-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.32;
   cursor: not-allowed;
 }
 
@@ -388,25 +399,30 @@ onMounted(() => {
   position: absolute;
   top: 100%;
   left: 0;
-  background: #2D2F31;
-  border-radius: 10px;
-  padding: 8px 0;
-  width: 150px;
+  background: linear-gradient(180deg, #10161e, #0d1218);
+  border: 1px solid #27323f;
+  border-radius: 6px;
+  padding: 6px 0;
+  width: 160px;
   z-index: 100;
-  margin-top: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  margin-top: 6px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.55);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 .dropdown-item {
   width: 100%;
   background: transparent;
   border: none;
-  color: white;
+  color: #c6d3e0;
   padding: 8px 12px;
   text-align: left;
   cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.5px;
 }
-.dropdown-item:hover { background: #424548; }
+.dropdown-item:hover { background: #19212b; color: #ffb020; }
 
 .dropdown-icon-text {
   display: flex;
@@ -417,10 +433,12 @@ onMounted(() => {
 .tool-arrow {
   background: none;
   border: none;
-  color: white;
-  padding: 0 8px;
+  color: #62717f;
+  padding: 0 6px;
   cursor: pointer;
+  transition: color 0.15s;
 }
+.tool-arrow:hover { color: #ffb020; }
 
 .tool-indicator {
   width: 11px;
@@ -442,25 +460,30 @@ onMounted(() => {
 }
 
 .recordings-select {
-  background: #2D2F31;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  padding: 8px 12px;
-  font-size: 14px;
+  background: #0a0d12;
+  color: #c6d3e0;
+  border: 1px solid #27323f;
+  border-radius: 5px;
+  padding: 7px 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: 0.4px;
   cursor: pointer;
   outline: none;
-  min-width: 120px;
-  max-width: 200px;
+  min-width: 140px;
+  max-width: 220px;
+  transition: border-color 0.15s, background 0.15s;
 }
 
-.recordings-select:hover {
-  background: #424548;
+.recordings-select:hover:not(:disabled) {
+  background: #10161e;
+  border-color: #ffb020;
 }
+.recordings-select:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .recordings-select option {
-  background: #2D2F31;
-  color: white;
+  background: #0d1218;
+  color: #c6d3e0;
 }
 
 /* RT / RP buttons — phosphor amber when active (selected mode). */
