@@ -8,23 +8,27 @@
 
       <!-- Center toolbar -->
       <div class="toolbar-group">
-        <!-- Mode Toggle — disabled until backend is up (RT/RP set backend mode) -->
-        <button class="tool-btn" :class="{ 'active': mode === 'realtime' }"
-                :disabled="!isBackendUp"
-                :title="backendDisabledTitle"
-                @click="setMode('realtime')">
-          <span class="mode-label">RT</span>
-        </button>
-        <button class="tool-btn" :class="{ 'active': mode === 'replay' }"
-                :disabled="!isBackendUp"
-                :title="backendDisabledTitle"
-                @click="setMode('replay')">
-          <span class="mode-label">RP</span>
-        </button>
+        <!-- Mode Toggle (RT / RP) — single segmented amber pill, the active
+             half lit up. Disabled until backend is up. -->
+        <div class="mode-toggle">
+          <button class="tool-btn mode-btn" :class="{ 'active': mode === 'realtime' }"
+                  :disabled="!isBackendUp"
+                  :title="backendDisabledTitle"
+                  @click="setMode('realtime')">
+            <span class="mode-label">RT</span>
+          </button>
+          <button class="tool-btn mode-btn" :class="{ 'active': mode === 'replay' }"
+                  :disabled="!isBackendUp"
+                  :title="backendDisabledTitle"
+                  @click="setMode('replay')">
+            <span class="mode-label">RP</span>
+          </button>
+        </div>
 
         <!-- Teleop (only in realtime mode) — launches scripts/teleop_quest.py
-             via the backend. The OpenCV camera window + "Record this teleop?"
-             prompt appear on the backend host's display. -->
+             via the backend. Green-phosphor: matches the in-UI overlay aesthetic
+             and signals "live data flowing" (distinct from HOME cyan, STOP red,
+             PANIC yellow). -->
         <button v-if="mode === 'realtime'" class="tool-btn teleop-btn" :class="{ 'active': isTeleopRunning }"
                 :disabled="!isBackendUp"
                 @click="toggleTeleop"
@@ -494,39 +498,94 @@ onMounted(() => {
   color: #c6d3e0;
 }
 
-/* RT / RP buttons — phosphor amber when active (selected mode). */
+/* RT / RP — single segmented amber pill container; the active half lit up
+   with a filled gradient + glowing text, the inactive half is muted but
+   readable. Hover on either half previews the active color. */
+.mode-toggle {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid rgba(255, 176, 32, 0.5);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(20, 14, 6, 0.45);
+  box-shadow: 0 0 8px rgba(255, 176, 32, 0.08) inset;
+  height: 38px;
+}
+.mode-toggle .mode-btn {
+  width: auto;
+  height: auto;
+  min-width: 52px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.mode-toggle .mode-btn + .mode-btn {
+  border-left: 1px solid rgba(255, 176, 32, 0.35);
+}
+.mode-toggle .mode-btn:hover:not(:disabled):not(.active) {
+  background: rgba(255, 176, 32, 0.07);
+}
+.mode-toggle .mode-btn:hover:not(:disabled):not(.active) .mode-label {
+  color: #ffb020;
+}
+.mode-toggle .mode-btn.active {
+  background: linear-gradient(180deg, #3a2810, #1a1106);
+  box-shadow: 0 0 12px rgba(255, 176, 32, 0.28) inset;
+}
 .mode-label {
   font-size: 12px;
-  font-weight: 700;
-  color: #888;
-  letter-spacing: 1px;
+  font-weight: 800;
+  color: #997040;
+  letter-spacing: 1.5px;
   transition: color 0.15s, text-shadow 0.15s;
 }
-.tool-btn.active .mode-label {
+.mode-toggle .mode-btn.active .mode-label {
   color: #ffb020;
-  text-shadow: 0 0 6px rgba(255,176,32,0.6);
+  text-shadow: 0 0 8px rgba(255, 176, 32, 0.7);
 }
-.tool-btn.active {
-  box-shadow: 0 0 0 1px rgba(255,176,32,0.25) inset;
-}
+.mode-toggle .mode-btn:disabled { opacity: 0.32; cursor: not-allowed; }
 
-/* TELE — phosphor green when running. */
+/* TELE — green-phosphor: idle = colored outline, running = filled +
+   pulsing glow. Matches the HOME / STOP / PANIC pattern (border + label
+   color + hover box-shadow). */
+.teleop-btn {
+  background: rgba(8, 36, 16, 0.4);
+  border: 1px solid rgba(105, 209, 128, 0.45);
+  transition: all 0.15s;
+}
+.teleop-btn:hover:not(:disabled) {
+  border-color: rgba(105, 209, 128, 0.9);
+  box-shadow: 0 0 14px rgba(105, 209, 128, 0.55);
+  background: rgba(10, 48, 20, 0.85);
+}
+.teleop-btn:disabled {
+  border-color: rgba(105, 209, 128, 0.18);
+  background: transparent;
+}
+.teleop-btn.active {
+  background: linear-gradient(180deg, #0a4a1c, #062810);
+  border-color: #69d180;
+  box-shadow: 0 0 18px rgba(105, 209, 128, 0.55),
+              0 0 0 1px rgba(105, 209, 128, 0.3) inset;
+}
 .teleop-label {
   font-size: 12px;
-  font-weight: 700;
-  color: #888;
-  letter-spacing: 1px;
+  font-weight: 800;
+  color: #69d180;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 6px rgba(105, 209, 128, 0.5);
   transition: color 0.15s, text-shadow 0.15s;
 }
 .teleop-label.running {
-  color: #36e08a;
-  text-shadow: 0 0 8px rgba(54,224,138,0.7);
+  color: #88e8a0;
+  text-shadow: 0 0 10px rgba(105, 209, 128, 0.85);
   animation: tele-pulse 1.6s ease-in-out infinite;
 }
-.teleop-btn.active {
-  background: #0d2118;
-  box-shadow: 0 0 0 1px rgba(54,224,138,0.4) inset,
-              0 0 14px rgba(54,224,138,0.25);
+.teleop-btn:disabled .teleop-label {
+  color: #62717f;
+  text-shadow: none;
 }
 @keyframes tele-pulse {
   0%, 100% { opacity: 1; }

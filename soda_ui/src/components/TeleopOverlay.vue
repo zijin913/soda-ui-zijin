@@ -8,6 +8,22 @@
         <header class="to-head">
           <span class="to-led" :class="{ 'to-led-rec': recording }" />
           <span class="to-title">TELEOP ACTIVE</span>
+
+          <!-- TASK pill — sticky per-session instruction. Clicking opens the
+               modal. Empty state blinks amber so it's noticed before the first
+               save. -->
+          <button class="to-taskpill" :class="{ 'tp-empty': !currentInstruction }"
+                  @click="openInstructionModal"
+                  :title="currentInstruction
+                    ? `Task: ${currentInstruction}  (click to change)`
+                    : 'Click to set a task — used for every episode saved next.'">
+            <span class="tp-glyph">★</span>
+            <span class="tp-key">TASK</span>
+            <span class="tp-sep">·</span>
+            <span class="tp-text">{{ currentInstruction || '(none) — click to set' }}</span>
+            <span class="tp-edit">✎</span>
+          </button>
+
           <span class="to-statpill" :class="statusClass">
             {{ statusLabel }}
           </span>
@@ -66,6 +82,14 @@
 
         <div v-if="conn.lastError" class="to-error">! {{ conn.lastError }}</div>
       </div>
+
+      <SaveInstructionModal
+        :open="instructionModalOpen"
+        :initial-text="currentInstruction"
+        :recent="recentInstructions"
+        @set="onInstructionSet"
+        @cancel="onInstructionCancel"
+      />
     </div>
   </Transition>
 </template>
@@ -73,6 +97,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useConnectionStore } from '@/stores/connection';
+import SaveInstructionModal from '@/components/SaveInstructionModal.vue';
 
 const props = defineProps({
   cameras: {
@@ -82,6 +107,65 @@ const props = defineProps({
 });
 
 const conn = useConnectionStore();
+
+// ── Per-session task instruction ─────────────────────────────────
+// Persisted across launches: re-opening the UI tomorrow keeps yesterday's task.
+const LS_CURRENT = 'teleop_current_task';
+const LS_RECENT = 'teleop_recent_tasks';
+const RECENT_MAX = 5;
+
+function loadStr(key, dflt) {
+  try { return localStorage.getItem(key) ?? dflt; } catch { return dflt; }
+}
+function loadArr(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x) : [];
+  } catch { return []; }
+}
+
+const currentInstruction = ref(loadStr(LS_CURRENT, ''));
+const recentInstructions = ref(loadArr(LS_RECENT));
+const instructionModalOpen = ref(false);
+// pendingSaveAfterSet: when S was pressed with empty task, modal opens; on
+// SET we immediately continue with the save. Set false on Cancel.
+let pendingSaveAfterSet = false;
+
+function persistCurrent() {
+  try { localStorage.setItem(LS_CURRENT, currentInstruction.value || ''); } catch { /* */ }
+}
+function pushRecent(text) {
+  const t = (text || '').trim();
+  if (!t) return;
+  const existing = recentInstructions.value.filter(x => x !== t);
+  recentInstructions.value = [t, ...existing].slice(0, RECENT_MAX);
+  try { localStorage.setItem(LS_RECENT, JSON.stringify(recentInstructions.value)); } catch { /* */ }
+}
+
+function openInstructionModal() {
+  pendingSaveAfterSet = false;
+  instructionModalOpen.value = true;
+}
+async function onInstructionSet(text) {
+  currentInstruction.value = text;
+  persistCurrent();
+  pushRecent(text);
+  instructionModalOpen.value = false;
+  // Tell teleop_quest right away so the next save uses it; sending eagerly
+  // (rather than on every S press) means a future S keystroke gets through
+  // the bridge as a single byte with no extra round-trip.
+  await conn.sendTeleopInstruction(text);
+  if (pendingSaveAfterSet) {
+    pendingSaveAfterSet = false;
+    await doSave();
+  }
+}
+function onInstructionCancel() {
+  pendingSaveAfterSet = false;
+  instructionModalOpen.value = false;
+}
 
 const CAMS = [
   { key: 'left',  label: 'LEFT' },
@@ -105,12 +189,14 @@ const statusUpper = computed(() => (conn.teleopStatus || '').toUpperCase());
 const recording = computed(() => statusUpper.value.includes('REC'));
 
 const statusLabel = computed(() => {
+  if (savedFlash.value) return savedFlash.value;
   if (!conn.teleopConnected) return 'CONNECTING…';
   if (conn.teleopClosed) return 'CLOSED';
   if (recording.value) return 'RECORDING';
   return statusUpper.value || 'READY';
 });
 const statusClass = computed(() => {
+  if (savedFlash.value) return 'sp-saved';
   if (recording.value) return 'sp-rec';
   return 'sp-ready';
 });
@@ -139,6 +225,15 @@ watch(() => conn.teleopRunning, (running) => {
     if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
   }
 }, { immediate: true });
+
+// Push the persisted task to teleop_quest as soon as the bridge is live. Lets
+// the operator just press R then S on a fresh launch without re-typing the
+// task from yesterday — the pending_instruction is already there.
+watch(() => conn.teleopConnected, (connected) => {
+  if (connected && currentInstruction.value.trim()) {
+    void conn.sendTeleopInstruction(currentInstruction.value.trim());
+  }
+});
 onUnmounted(() => { if (tickTimer) clearInterval(tickTimer); });
 
 // ── actions ─────────────────────────────────────────────────────
@@ -152,6 +247,26 @@ async function sendKey(ch) {
   } finally {
     pending.value = false;
   }
+}
+
+// Brief "SAVED: <task>" flash on the status pill after a successful S press.
+const savedFlash = ref('');
+let savedFlashTimer = null;
+function flashSaved(text) {
+  savedFlash.value = `SAVED: ${text}`;
+  if (savedFlashTimer) clearTimeout(savedFlashTimer);
+  savedFlashTimer = setTimeout(() => { savedFlash.value = ''; }, 1800);
+}
+
+// The actual save action — push the (already-set) current instruction up to
+// teleop_quest just before firing S so a freshly-edited task is guaranteed
+// applied even if the modal's set request was somehow dropped.
+async function doSave() {
+  const task = (currentInstruction.value || '').trim();
+  if (task) await conn.sendTeleopInstruction(task);
+  const r = await sendKey('s');
+  if (task) flashSaved(task);
+  return r;
 }
 
 // Operator pressed/clicked a UI key — route q to graceful stop and forward
@@ -168,7 +283,17 @@ async function onKey(ch) {
     }
     return;
   }
-  if (['r', 's', 'f'].includes(ch)) {
+  if (ch === 's') {
+    // No task set → open modal, save continues automatically once SET clicked.
+    if (!currentInstruction.value.trim()) {
+      pendingSaveAfterSet = true;
+      instructionModalOpen.value = true;
+      return;
+    }
+    await doSave();
+    return;
+  }
+  if (['r', 'f'].includes(ch)) {
     await sendKey(ch);
   }
 }
@@ -259,6 +384,67 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
 .to-statpill.sp-rec { color: #ff5050; border-color: #ff5050; animation: to-blink 0.8s steps(2, end) infinite; }
 .to-statpill.sp-prompt { color: #ffd060; border-color: #ffd060; }
 .to-statpill.sp-ready { color: #69d180; border-color: #5a8a64; }
+.to-statpill.sp-saved {
+  color: #69d180; border-color: #69d180;
+  background: linear-gradient(180deg, #0a2a14, #052010);
+  box-shadow: 0 0 14px rgba(105, 209, 128, 0.55);
+  animation: to-saved-glow 1.8s ease-out;
+  max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@keyframes to-saved-glow {
+  0%   { box-shadow: 0 0 24px rgba(105, 209, 128, 0.85); }
+  100% { box-shadow: 0 0 0  rgba(105, 209, 128, 0.0); }
+}
+
+/* TASK pill — sits between the title and status pill. Click anywhere on
+   it to open the SaveInstructionModal. Empty state blinks amber so it's
+   noticed before the first save. */
+.to-taskpill {
+  display: flex; align-items: center; gap: 8px;
+  margin-left: 8px;
+  padding: 6px 12px;
+  background: linear-gradient(180deg, #1a1106, #06080b);
+  border: 1px solid #5a4214;
+  border-radius: 3px;
+  color: #c69a4a;
+  font-family: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  max-width: 360px;
+}
+.to-taskpill:hover {
+  border-color: #ffb020;
+  color: #ffb020;
+  box-shadow: 0 0 12px rgba(255, 176, 32, 0.35);
+  background: linear-gradient(180deg, #3a2810, #1a1106);
+}
+.to-taskpill.tp-empty {
+  border-style: dashed;
+  border-color: rgba(255, 176, 32, 0.55);
+  color: #ffd060;
+  animation: to-blink 1.4s steps(2, end) infinite;
+}
+.tp-glyph { font-size: 12px; color: #ffb020; flex-shrink: 0; }
+.tp-key {
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 1.6px;
+  color: #997040;
+  flex-shrink: 0;
+}
+.to-taskpill:hover .tp-key { color: #ffb020; }
+.tp-sep { color: rgba(255, 176, 32, 0.3); flex-shrink: 0; }
+.tp-text {
+  font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tp-edit {
+  font-size: 12px;
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+.to-taskpill:hover .tp-edit { opacity: 1; }
 
 /* ── camera grid ── */
 .to-cams {

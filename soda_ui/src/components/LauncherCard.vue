@@ -40,7 +40,11 @@ $ python -m soda_launcher</pre>
           <button class="btn-launch" :disabled="!canLaunch" @click="onLaunch">
             <span class="btn-glyph">▶</span> LAUNCH
           </button>
-          <button class="btn-stop" :disabled="!canStop" @click="conn.openStopConfirm">
+          <!-- Visually still STOP; clicking opens the PANIC / force-kill
+               modal (hold-to-confirm SIGKILL all). The launcher-screen STOP
+               is the operator's "get me out" button — go straight to nuclear,
+               skip the soft stop flow. -->
+          <button class="btn-stop" :disabled="!canStop" @click="conn.openForceKill">
             <span class="btn-glyph">■</span> STOP
           </button>
         </section>

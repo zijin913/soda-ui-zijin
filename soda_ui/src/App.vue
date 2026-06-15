@@ -252,11 +252,34 @@ const clearStaleCameras = () => {
     URL.revokeObjectURL(cameraRgbUrl.value);
   }
   cameraRgbUrl.value = null;
+  // MJPEG URLs (http://…/camera/stream?cam=X) live independently of the
+  // legacy /ws and are reset only when backend transitions through 'down'.
+  // Only revoke leftover blob: URLs from older protocol versions.
   for (const k of ['left', 'right', 'side']) {
     const u = cameraRgbUrls.value[k];
     if (u && u.startsWith('blob:')) URL.revokeObjectURL(u);
-    cameraRgbUrls.value[k] = null;
   }
+};
+
+// Build MJPEG URLs for the three cameras. Each <img> opens its own HTTP
+// streaming connection, so backpressure on any one cam (or on the state WS)
+// can't starve the others. Cache-bust suffix forces a fresh connection if
+// the backend was restarted (otherwise the browser may reuse the dead one).
+const mjpegUrl = (cam) => {
+  const base = conn.backendUrl;
+  if (!base) return null;
+  return `${base}/camera/stream?cam=${cam}&_=${Date.now()}`;
+};
+const wireMjpegCameras = () => {
+  cameraRgbUrls.value = {
+    left:  mjpegUrl('left'),
+    right: mjpegUrl('right'),
+    side:  mjpegUrl('side'),
+  };
+};
+const tearDownMjpegCameras = () => {
+  // Setting src to null aborts the in-flight MJPEG GET on the browser side.
+  cameraRgbUrls.value = { left: null, right: null, side: null };
 };
 
 // Hoisted out of initWebSocket so reconnects don't redefine the global.
@@ -352,14 +375,12 @@ const handleMessagepackData = (arrayBuffer) => {
 
     if (data.dual_mode && data.arms) {
       // ── Dual-arm protocol ──
+      // Camera video is consumed via the dedicated MJPEG endpoints
+      // (cameraRgbUrls is wired up by the backend-up watcher below) — we
+      // intentionally ignore data.video / data.side_video here so the legacy
+      // /ws message stays small (state + cloud only) and never starves the
+      // 3D viewport when bandwidth gets tight.
       for (const [side, armData] of Object.entries(data.arms)) {
-        // Video per arm
-        if (armData.video) {
-          const blob = new Blob([armData.video], { type: 'image/jpeg' });
-          const newUrl = URL.createObjectURL(blob);
-          if (cameraRgbUrls.value[side]) URL.revokeObjectURL(cameraRgbUrls.value[side]);
-          cameraRgbUrls.value[side] = newUrl;
-        }
         // Joints per arm — keyed by side in chartDataHistory; 3D viewport gets `side` via updateJoints
         if (armData.joints && Array.isArray(armData.joints)) {
           updateJoints(armData.joints, side);
@@ -368,13 +389,6 @@ const handleMessagepackData = (arrayBuffer) => {
         if (typeof armData.gripper_distance === 'number') {
           gripperDistances.value[side] = armData.gripper_distance * 1000;
         }
-      }
-      // Side camera (sent separately, not per-arm)
-      if (data.side_video) {
-        const blob = new Blob([data.side_video], { type: 'image/jpeg' });
-        const newUrl = URL.createObjectURL(blob);
-        if (cameraRgbUrls.value.side) URL.revokeObjectURL(cameraRgbUrls.value.side);
-        cameraRgbUrls.value.side = newUrl;
       }
       // Point cloud — binary float32 (x,y,z,r,g,b per point), sent once per
       // new cloud from the backend's background worker. Decoded into the same
@@ -657,12 +671,19 @@ const handleSeek = (frameIdx) => {
 
 // Re-attempt WS connection the instant the launcher reports the backend
 // is up (avoids waiting a full 1s for the next initWebSocket setTimeout).
+// Also wires up the per-camera MJPEG streams here so they come back online
+// after the backend restarts (and tears them down on backend === 'down').
 watch(() => conn.backend, (newState) => {
-  if (newState === 'up' && (!socket || socket.readyState !== WebSocket.OPEN)) {
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    initWebSocket();
+  if (newState === 'up') {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      initWebSocket();
+    }
+    wireMjpegCameras();
+  } else if (newState === 'down') {
+    tearDownMjpegCameras();
   }
-});
+}, { immediate: true });
 
 // Detect dual-arm mode once the backend is reachable, then keep watching in
 // case the backend is restarted in a different mode.

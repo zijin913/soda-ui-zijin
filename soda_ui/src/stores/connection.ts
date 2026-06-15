@@ -179,7 +179,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   async function pollTeleopOnce(): Promise<void> {
     if (backend.value !== 'up') {
-      teleopRunning.value = false
+      setTeleopRunning(false)
       teleopPid.value = null
       return
     }
@@ -187,11 +187,26 @@ export const useConnectionStore = defineStore('connection', () => {
       const r = await fetch(`${backendUrl.value}/api/teleop/status`, { cache: 'no-store' })
       if (!r.ok) throw new Error()
       const t = await r.json()
-      teleopRunning.value = !!t.running
+      setTeleopRunning(!!t.running)
       teleopPid.value = t.pid ?? null
     } catch {
-      teleopRunning.value = false
+      setTeleopRunning(false)
       teleopPid.value = null
+    }
+  }
+
+  // Centralized teleopRunning setter so we can detect the false→true edge
+  // (= "new session begins") and clear the stale flags from the previous
+  // session in one place. Without this the overlay would never re-show on
+  // the second teleop (teleopClosed stayed true from the first session).
+  function setTeleopRunning(running: boolean) {
+    const wasRunning = teleopRunning.value
+    teleopRunning.value = running
+    if (running && !wasRunning) {
+      teleopClosed.value = false
+      teleopConnected.value = false
+      teleopStatus.value = ''
+      teleopOverlayDismissed.value = false
     }
   }
 
@@ -288,6 +303,24 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
+  // Set the per-session task instruction on teleop_quest. The next save
+  // (S key) consumes it for instruction.txt / info.json / HDF5 attrs. Sending
+  // again before the next save just overwrites — perfect for batch collection
+  // where N episodes share one task.
+  async function sendTeleopInstruction(text: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}/api/teleop/instruction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text ?? '' }),
+      })
+      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  }
+
   // Graceful teleop shutdown — what the original teleop_viewer.py did on 'q':
   // POST /api/teleop/stop so the backend SIGINTs teleop_quest (saves any
   // in-progress episode), closes the bridge, and clears all state. Sending a
@@ -350,7 +383,11 @@ export const useConnectionStore = defineStore('connection', () => {
       return
     }
     teleopWs.onopen = () => {
-      teleopClosed.value = false
+      // NOTE: don't reset teleopClosed here. Whether the current session is
+      // truly closed is owned by the bridge's snapshot / closed messages —
+      // an auto-reconnect after the session ended would otherwise blip the
+      // overlay back into a "CONNECTING…" state for ~800 ms before the next
+      // /api/teleop/status poll catches up.
     }
     teleopWs.onmessage = (e) => {
       try {
@@ -373,11 +410,14 @@ export const useConnectionStore = defineStore('connection', () => {
     }
     teleopWs.onclose = () => {
       teleopWs = null
-      // Auto-reconnect while teleop is still flagged running.
-      if (teleopRunning.value && !teleopWsReconnectTimer) {
+      // Auto-reconnect only while teleop is still flagged running AND the
+      // bridge hasn't told us the session is over. Otherwise we'd race the
+      // /api/teleop/status poll (which takes up to 2 s to flip teleopRunning
+      // to false) and briefly re-open the overlay in CONNECTING state.
+      if (teleopRunning.value && !teleopClosed.value && !teleopWsReconnectTimer) {
         teleopWsReconnectTimer = window.setTimeout(() => {
           teleopWsReconnectTimer = null
-          if (teleopRunning.value) openTeleopWs()
+          if (teleopRunning.value && !teleopClosed.value) openTeleopWs()
         }, 800)
       }
     }
@@ -494,7 +534,7 @@ export const useConnectionStore = defineStore('connection', () => {
     openStopConfirm, closeStopConfirm, openForceKill, closeForceKill,
     confirmStop,
     beginRecoveryStarting, endRecoveryStarting,
-    sendTeleopKey, stopTeleop, goHome, openTeleopWs, closeTeleopWs,
+    sendTeleopKey, sendTeleopInstruction, stopTeleop, goHome, openTeleopWs, closeTeleopWs,
     startLogTail, stopLogTail, fetchLogs,
     tickWsFrame, setWsConnected, setWsLatency,
   }
