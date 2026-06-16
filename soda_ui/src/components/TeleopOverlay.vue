@@ -339,8 +339,8 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
 
 .to-card {
   position: relative;
-  width: min(1240px, 95vw);
-  max-height: 92vh;
+  width: min(1600px, 97vw);
+  max-height: 96vh;
   background: linear-gradient(180deg, #0a1812, #06080b);
   border: 2px solid #ffb020;
   border-radius: 8px;

@@ -84,6 +84,10 @@
            overlay was dismissed but teleop is still active. Click to re-open. -->
       <TeleopBanner />
 
+      <!-- 5c. Calibration banner — shows when the calibration panel was
+           dismissed but a session is still open. Click to re-open the panel. -->
+      <CalibrationBanner />
+
     </div>
 
     <!-- 6. Zero-gravity recovery overlay — fullscreen phosphor modal shown
@@ -105,6 +109,11 @@
          running. Replaces the OpenCV viewer popup; reuses our existing
          per-camera blob URLs (no new camera connection on the backend). -->
     <TeleopOverlay :cameras="cameraRgbUrls" />
+
+    <!-- 9b. Camera calibration modal — phosphor panel with annotated ChArUco
+         stream; opened from the TopBar CALIB button. Runs through the backend's
+         single command client (no teleop conflict). -->
+    <CalibrationModal />
 
     <!-- 10. Persistent log panel — floats bottom-right, color-coded backend
          and hw streams. Stays visible after LauncherCard dismisses so the
@@ -128,6 +137,8 @@ import StopConfirmModal from './components/StopConfirmModal.vue';
 import LogPanel from './components/LogPanel.vue';
 import TeleopOverlay from './components/TeleopOverlay.vue';
 import TeleopBanner from './components/TeleopBanner.vue';
+import CalibrationModal from './components/CalibrationModal.vue';
+import CalibrationBanner from './components/CalibrationBanner.vue';
 // import JointClearanceRow from './components/JointClearanceRow.vue';  // disabled per user
 import { useConnectionStore } from '@/stores/connection';
 

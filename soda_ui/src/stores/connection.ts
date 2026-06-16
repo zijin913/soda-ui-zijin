@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 // State of the launcher + backend + WS connection. The UI reads from here
 // to decide what to render (LauncherCard overlay vs. operational mode) and
@@ -77,6 +77,21 @@ export const useConnectionStore = defineStore('connection', () => {
   const teleopConnected = ref<boolean>(false)  // bridge ↔ teleop_quest socket up
   const teleopClosed = ref<boolean>(false)     // bridge saw socket close (session ended)
   const teleopOverlayDismissed = ref<boolean>(false)
+
+  // ── Camera calibration (backend /calibration/*) ─────────────────────
+  // calibrationOpen drives the CalibrationModal mounted at App.vue root.
+  // calibStatus mirrors GET /calibration/status?target= for the selected
+  // target (phase / board_detected / samples_collected / metrics / ...).
+  const calibrationOpen = ref<boolean>(false)
+  // Like teleopOverlayDismissed: hide the modal but keep the session (and its
+  // polling) alive; a banner re-opens it. The CalibrationModal component stays
+  // mounted at App root regardless, so polling survives a dismiss.
+  const calibrationDismissed = ref<boolean>(false)
+  const calibTarget = ref<'left' | 'right' | 'side'>('left')
+  const calibStatus = ref<Record<string, any>>({ phase: 'idle' })
+  const calibActive = computed(() =>
+    ['positioning', 'collecting', 'solving'].includes(calibStatus.value?.phase),
+  )
 
   // RecoveryModal "DISMISS OVERLAY" toggle. When true the fullscreen modal is
   // hidden but the slim ZeroGravityBanner stays visible and can re-open the
@@ -206,6 +221,82 @@ export const useConnectionStore = defineStore('connection', () => {
       teleopStatus.value = ''
       teleopOverlayDismissed.value = false
     }
+  }
+
+  // ── calibration ─────────────────────────────────────────────────────
+  function openCalibration() { calibrationOpen.value = true; calibrationDismissed.value = false }
+  function closeCalibration() { calibrationOpen.value = false; calibrationDismissed.value = false }
+  function dismissCalibration() { calibrationDismissed.value = true }
+  function reopenCalibration() { calibrationDismissed.value = false }
+
+  // Backend gone (e.g. E-STOP SIGKILLed soda_os.main — and with it the
+  // in-process calibration threads). Tear the calibration UI down so it doesn't
+  // falsely show a session still running and keep teleop locked out. Driven by a
+  // watcher on `backend` so it fires regardless of whether the modal's poll
+  // timer is active. (Mirrors how pollTeleopOnce clears teleopRunning.)
+  function resetCalibrationUi(): void {
+    calibStatus.value = { phase: 'idle' }
+    calibrationOpen.value = false
+    calibrationDismissed.value = false
+  }
+  watch(backend, (b) => {
+    if (b !== 'up' && (calibrationOpen.value || calibActive.value)) resetCalibrationUi()
+  })
+
+  async function pollCalibrationOnce(): Promise<void> {
+    if (backend.value !== 'up') return
+    try {
+      const r = await fetch(
+        `${backendUrl.value}/calibration/status?target=${calibTarget.value}`,
+        { cache: 'no-store' },
+      )
+      if (!r.ok) throw new Error()
+      calibStatus.value = await r.json()
+    } catch {
+      /* keep last known status on a transient miss */
+    }
+  }
+
+  let calibTimer: number | null = null
+  function startCalibPolling(): void {
+    if (calibTimer !== null) return
+    void pollCalibrationOnce()
+    calibTimer = window.setInterval(pollCalibrationOnce, 1000)
+  }
+  function stopCalibPolling(): void {
+    if (calibTimer !== null) window.clearInterval(calibTimer)
+    calibTimer = null
+  }
+
+  async function _calibPost(
+    path: string, body: Record<string, any>,
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) return { ok: false, error: data?.detail || `HTTP ${r.status}` }
+      calibStatus.value = data
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message || e) }
+    }
+  }
+
+  async function startCalibration(target: 'left' | 'right' | 'side') {
+    calibTarget.value = target
+    const r = await _calibPost('/calibration/start', { target })
+    void pollCalibrationOnce()
+    return r
+  }
+  async function confirmCalibPosition() {
+    return _calibPost('/calibration/confirm_position', { target: calibTarget.value })
+  }
+  async function cancelCalibration() {
+    return _calibPost('/calibration/cancel', { target: calibTarget.value })
   }
 
   // ── actions ────────────────────────────────────────────────────────
@@ -521,6 +612,7 @@ export const useConnectionStore = defineStore('connection', () => {
     cpuPct, ramPct, backendRssMb, hwRssMb,
     teleopRunning, teleopPid,
     teleopStatus, teleopConnected, teleopClosed, teleopOverlayDismissed,
+    calibrationOpen, calibrationDismissed, calibTarget, calibStatus, calibActive,
     homing,
     recoveryModalDismissed, recoveryStarting, recoveryFinishing,
     stopConfirmOpen,
@@ -535,6 +627,9 @@ export const useConnectionStore = defineStore('connection', () => {
     confirmStop,
     beginRecoveryStarting, endRecoveryStarting,
     sendTeleopKey, sendTeleopInstruction, stopTeleop, goHome, openTeleopWs, closeTeleopWs,
+    openCalibration, closeCalibration, dismissCalibration, reopenCalibration,
+    startCalibPolling, stopCalibPolling,
+    pollCalibrationOnce, startCalibration, confirmCalibPosition, cancelCalibration,
     startLogTail, stopLogTail, fetchLogs,
     tickWsFrame, setWsConnected, setWsLatency,
   }

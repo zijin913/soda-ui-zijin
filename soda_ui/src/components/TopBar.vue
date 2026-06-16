@@ -30,11 +30,24 @@
              and signals "live data flowing" (distinct from HOME cyan and
              STOP red). -->
         <button v-if="mode === 'realtime'" class="tool-btn teleop-btn" :class="{ 'active': isTeleopRunning }"
-                :disabled="!isBackendUp"
+                :disabled="!isBackendUp || isCalibActive"
                 @click="toggleTeleop"
                 :title="!isBackendUp ? backendDisabledTitle :
+                        isCalibActive ? 'Calibration in progress' :
                         isTeleopRunning ? 'Stop teleop' : 'Start teleop (recording is asked in the camera window that pops up on the robot host)'">
           <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
+        </button>
+
+        <!-- CALIBRATE (only in realtime mode) — opens the calibration modal.
+             Runs through the backend's single command client, so it cannot
+             coexist with teleop; disabled while teleop is running. -->
+        <button v-if="mode === 'realtime'" class="tool-btn calib-btn" :class="{ 'active': isCalibActive }"
+                :disabled="!isBackendUp || isTeleopRunning"
+                @click="conn.openCalibration"
+                :title="!isBackendUp ? backendDisabledTitle :
+                        isTeleopRunning ? 'Stop teleop first' :
+                        'Calibrate a camera (left / right / side)'">
+          <span class="calib-label" :class="{ 'running': isCalibActive }">CAL</span>
         </button>
 
         <!-- HOME — move both arms to home pose. During teleop routes through
@@ -173,6 +186,8 @@ const isDepthActive = ref(false);
 // Teleop running state lives in the connection store now (also visible from
 // StatusRail). It's polled by the store; we just read it.
 const isTeleopRunning = computed(() => conn.teleopRunning);
+// Calibration owns the arm exclusively; mirror teleop's button-level interlock.
+const isCalibActive = computed(() => conn.calibActive);
 const recordingFiles = ref([]);
 const selectedRecording = ref('');
 const mode = ref('realtime');
@@ -590,6 +605,46 @@ onMounted(() => {
 @keyframes tele-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.72; }
+}
+
+/* CAL — violet phosphor, distinct from teleop green / home cyan. Idle =
+   colored outline, active (a session running) = filled + pulsing glow. */
+.calib-btn {
+  background: rgba(26, 14, 40, 0.45);
+  border: 1px solid rgba(176, 130, 255, 0.5);
+  transition: all 0.15s;
+}
+.calib-btn:hover:not(:disabled) {
+  border-color: rgba(176, 130, 255, 0.95);
+  box-shadow: 0 0 14px rgba(176, 130, 255, 0.55);
+  background: rgba(36, 20, 56, 0.85);
+}
+.calib-btn:disabled {
+  border-color: rgba(176, 130, 255, 0.18);
+  background: transparent;
+}
+.calib-btn.active {
+  background: linear-gradient(180deg, #2c1850, #150a28);
+  border-color: #b082ff;
+  box-shadow: 0 0 18px rgba(176, 130, 255, 0.55),
+              0 0 0 1px rgba(176, 130, 255, 0.3) inset;
+}
+.calib-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #c2a3ff;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 6px rgba(176, 130, 255, 0.5);
+  transition: color 0.15s, text-shadow 0.15s;
+}
+.calib-label.running {
+  color: #d9c4ff;
+  text-shadow: 0 0 10px rgba(176, 130, 255, 0.85);
+  animation: tele-pulse 1.6s ease-in-out infinite;
+}
+.calib-btn:disabled .calib-label {
+  color: #62717f;
+  text-shadow: none;
 }
 
 /* STOP — Pi-style diagonal red stripes + phosphor glow. */
