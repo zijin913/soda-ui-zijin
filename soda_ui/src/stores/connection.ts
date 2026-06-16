@@ -93,6 +93,18 @@ export const useConnectionStore = defineStore('connection', () => {
     ['positioning', 'collecting', 'solving'].includes(calibStatus.value?.phase),
   )
 
+  // ── host policy ─────────────────────────────────────────────────────
+  // hostPolicyOpen drives the HostPolicyModal mounted at App root. policyStatus
+  // mirrors GET /policy/status (also pushed over /ws/policy). policyList comes
+  // from GET /policy/list (the registry: dropdown + per-policy defaults).
+  const hostPolicyOpen = ref<boolean>(false)
+  const hostPolicyDismissed = ref<boolean>(false)
+  const policyList = ref<Record<string, any>[]>([])
+  const policyStatus = ref<Record<string, any>>({ phase: 'idle' })
+  const policyActive = computed(() =>
+    ['connecting', 'homing', 'probe', 'running'].includes(policyStatus.value?.phase),
+  )
+
   // RecoveryModal "DISMISS OVERLAY" toggle. When true the fullscreen modal is
   // hidden but the slim ZeroGravityBanner stays visible and can re-open the
   // modal by flipping this back to false.
@@ -297,6 +309,144 @@ export const useConnectionStore = defineStore('connection', () => {
   }
   async function cancelCalibration() {
     return _calibPost('/calibration/cancel', { target: calibTarget.value })
+  }
+
+  // ── host policy ─────────────────────────────────────────────────────
+  function openHostPolicy() { hostPolicyOpen.value = true; hostPolicyDismissed.value = false }
+  function closeHostPolicy() { hostPolicyOpen.value = false; hostPolicyDismissed.value = false }
+  function dismissHostPolicy() { hostPolicyDismissed.value = true }
+  function reopenHostPolicy() { hostPolicyDismissed.value = false }
+
+  function resetHostPolicyUi(): void {
+    policyStatus.value = { phase: 'idle' }
+    hostPolicyOpen.value = false
+    hostPolicyDismissed.value = false
+    closePolicyWs()
+  }
+  watch(backend, (b) => {
+    if (b !== 'up' && (hostPolicyOpen.value || policyActive.value)) resetHostPolicyUi()
+  })
+
+  async function fetchPolicyList(): Promise<void> {
+    if (backend.value !== 'up') return
+    try {
+      const r = await fetch(`${backendUrl.value}/policy/list`, { cache: 'no-store' })
+      if (!r.ok) throw new Error()
+      const data = await r.json()
+      policyList.value = data?.policies || []
+    } catch { /* keep last list */ }
+  }
+
+  async function pollPolicyOnce(): Promise<void> {
+    if (backend.value !== 'up') return
+    try {
+      const r = await fetch(`${backendUrl.value}/policy/status`, { cache: 'no-store' })
+      if (!r.ok) throw new Error()
+      policyStatus.value = await r.json()
+    } catch { /* keep last known status */ }
+  }
+
+  let policyTimer: number | null = null
+  function startPolicyPolling(): void {
+    if (policyTimer !== null) return
+    void pollPolicyOnce()
+    policyTimer = window.setInterval(pollPolicyOnce, 1000)
+  }
+  function stopPolicyPolling(): void {
+    if (policyTimer !== null) window.clearInterval(policyTimer)
+    policyTimer = null
+  }
+
+  async function _policyPost(
+    path: string, body: Record<string, any> = {},
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) return { ok: false, error: data?.detail || `HTTP ${r.status}` }
+      policyStatus.value = data
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message || e) }
+    }
+  }
+
+  async function startPolicy(body: Record<string, any>) {
+    const r = await _policyPost('/policy/start', body)
+    void pollPolicyOnce()
+    return r
+  }
+
+  // Add/edit a USER policy (persisted server-side; no source access needed).
+  async function savePolicy(entry: Record<string, any>): Promise<{ ok: boolean; error?: string; id?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}/policy/registry`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) return { ok: false, error: data?.detail || `HTTP ${r.status}` }
+      if (data.policies) policyList.value = data.policies
+      return { ok: true, id: data?.saved?.id }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message || e) }
+    }
+  }
+  async function deletePolicy(id: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}/policy/registry/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) return { ok: false, error: data?.detail || `HTTP ${r.status}` }
+      if (data.policies) policyList.value = data.policies
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message || e) }
+    }
+  }
+  async function stopPolicy() {
+    return _policyPost('/policy/stop', {})
+  }
+  // Live-update soft tuning knobs (speed/smoothness/latch) during a rollout.
+  async function updatePolicyParams(overrides: Record<string, any>) {
+    return _policyPost('/policy/params', { overrides })
+  }
+
+  // /ws/policy — read-only status push (mirrors the teleop_ui ws).
+  let policyWs: WebSocket | null = null
+  let policyWsReconnectTimer: number | null = null
+  function openPolicyWs(): void {
+    if (policyWs && (policyWs.readyState === WebSocket.OPEN ||
+                      policyWs.readyState === WebSocket.CONNECTING)) return
+    const url = wsUrl.value.replace(/\/ws$/, '/ws/policy')
+    try {
+      policyWs = new WebSocket(url)
+    } catch {
+      policyWs = null
+      return
+    }
+    policyWs.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data)
+        if (d.type === 'status') policyStatus.value = d
+      } catch { /* ignore parse errors */ }
+    }
+    policyWs.onclose = () => {
+      policyWs = null
+      if (policyActive.value && !policyWsReconnectTimer) {
+        policyWsReconnectTimer = window.setTimeout(() => {
+          policyWsReconnectTimer = null
+          if (policyActive.value) openPolicyWs()
+        }, 800)
+      }
+    }
+    policyWs.onerror = () => { /* let onclose handle reconnect */ }
+  }
+  function closePolicyWs(): void {
+    if (policyWsReconnectTimer) { window.clearTimeout(policyWsReconnectTimer); policyWsReconnectTimer = null }
+    if (policyWs) { try { policyWs.close() } catch { /* noop */ } policyWs = null }
   }
 
   // ── actions ────────────────────────────────────────────────────────
@@ -613,6 +763,7 @@ export const useConnectionStore = defineStore('connection', () => {
     teleopRunning, teleopPid,
     teleopStatus, teleopConnected, teleopClosed, teleopOverlayDismissed,
     calibrationOpen, calibrationDismissed, calibTarget, calibStatus, calibActive,
+    hostPolicyOpen, hostPolicyDismissed, policyList, policyStatus, policyActive,
     homing,
     recoveryModalDismissed, recoveryStarting, recoveryFinishing,
     stopConfirmOpen,
@@ -630,6 +781,9 @@ export const useConnectionStore = defineStore('connection', () => {
     openCalibration, closeCalibration, dismissCalibration, reopenCalibration,
     startCalibPolling, stopCalibPolling,
     pollCalibrationOnce, startCalibration, confirmCalibPosition, cancelCalibration,
+    openHostPolicy, closeHostPolicy, dismissHostPolicy, reopenHostPolicy,
+    fetchPolicyList, pollPolicyOnce, startPolicyPolling, stopPolicyPolling,
+    startPolicy, stopPolicy, updatePolicyParams, savePolicy, deletePolicy, openPolicyWs, closePolicyWs,
     startLogTail, stopLogTail, fetchLogs,
     tickWsFrame, setWsConnected, setWsLatency,
   }

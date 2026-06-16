@@ -50,6 +50,18 @@
           <span class="calib-label" :class="{ 'running': isCalibActive }">CAL</span>
         </button>
 
+        <!-- HOST POLICY (only in realtime) — opens the policy modal. Shares the
+             single command client, so it can't coexist with teleop/calibration. -->
+        <button v-if="mode === 'realtime'" class="tool-btn policy-btn" :class="{ 'active': isPolicyActive }"
+                :disabled="!isBackendUp || isTeleopRunning || isCalibActive"
+                @click="conn.openHostPolicy"
+                :title="!isBackendUp ? backendDisabledTitle :
+                        isTeleopRunning ? 'Stop teleop first' :
+                        isCalibActive ? 'Stop calibration first' :
+                        'Host a policy (pick policy + params, then run)'">
+          <span class="policy-label" :class="{ 'running': isPolicyActive }">POLICY</span>
+        </button>
+
         <!-- HOME — move both arms to home pose. During teleop routes through
              teleop_quest's 'h' key (clears pending target + pauses) so it
              doesn't race teleop's command stream. Otherwise POSTs /robot/home. -->
@@ -188,6 +200,7 @@ const isDepthActive = ref(false);
 const isTeleopRunning = computed(() => conn.teleopRunning);
 // Calibration owns the arm exclusively; mirror teleop's button-level interlock.
 const isCalibActive = computed(() => conn.calibActive);
+const isPolicyActive = computed(() => conn.policyActive);
 const recordingFiles = ref([]);
 const selectedRecording = ref('');
 const mode = ref('realtime');
@@ -646,6 +659,34 @@ onMounted(() => {
   color: #62717f;
   text-shadow: none;
 }
+
+/* HOST POLICY — amber phosphor, distinct from teleop-green / calib-violet. */
+.policy-btn {
+  background: rgba(40, 28, 8, 0.45);
+  border: 1px solid rgba(255, 179, 71, 0.5);
+  transition: all 0.15s;
+}
+.policy-btn:hover:not(:disabled) {
+  border-color: rgba(255, 179, 71, 0.95);
+  box-shadow: 0 0 14px rgba(255, 179, 71, 0.55);
+  background: rgba(56, 38, 12, 0.85);
+}
+.policy-btn:disabled { border-color: rgba(255, 179, 71, 0.18); background: transparent; }
+.policy-btn.active {
+  background: linear-gradient(180deg, #50360e, #281a06);
+  border-color: #ffb347;
+  box-shadow: 0 0 18px rgba(255, 179, 71, 0.55), 0 0 0 1px rgba(255, 179, 71, 0.3) inset;
+}
+.policy-label {
+  font-size: 12px; font-weight: 800; color: #ffd28a; letter-spacing: 1.5px;
+  text-shadow: 0 0 6px rgba(255, 179, 71, 0.5);
+  transition: color 0.15s, text-shadow 0.15s;
+}
+.policy-label.running {
+  color: #ffe6c2; text-shadow: 0 0 10px rgba(255, 179, 71, 0.85);
+  animation: tele-pulse 1.6s ease-in-out infinite;
+}
+.policy-btn:disabled .policy-label { color: #62717f; text-shadow: none; }
 
 /* STOP — Pi-style diagonal red stripes + phosphor glow. */
 /* HOME — calm cyan utility button; routes through teleop_quest's 'h' key

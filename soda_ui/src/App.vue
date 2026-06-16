@@ -88,6 +88,10 @@
            dismissed but a session is still open. Click to re-open the panel. -->
       <CalibrationBanner />
 
+      <!-- 5d. Host-policy banner — shows when the policy panel was dismissed
+           but a rollout is still running. Click to re-open the panel. -->
+      <HostPolicyBanner />
+
     </div>
 
     <!-- 6. Zero-gravity recovery overlay — fullscreen phosphor modal shown
@@ -115,6 +119,10 @@
          single command client (no teleop conflict). -->
     <CalibrationModal />
 
+    <!-- 9c. Host-policy modal — pick a policy + params and run it through the
+         shared services (probe / dry-run / live). Opened from the POLICY button. -->
+    <HostPolicyModal />
+
     <!-- 10. Persistent log panel — floats bottom-right, color-coded backend
          and hw streams. Stays visible after LauncherCard dismisses so the
          user can keep an eye on the streams during normal operation. -->
@@ -139,6 +147,8 @@ import TeleopOverlay from './components/TeleopOverlay.vue';
 import TeleopBanner from './components/TeleopBanner.vue';
 import CalibrationModal from './components/CalibrationModal.vue';
 import CalibrationBanner from './components/CalibrationBanner.vue';
+import HostPolicyModal from './components/HostPolicyModal.vue';
+import HostPolicyBanner from './components/HostPolicyBanner.vue';
 // import JointClearanceRow from './components/JointClearanceRow.vue';  // disabled per user
 import { useConnectionStore } from '@/stores/connection';
 
