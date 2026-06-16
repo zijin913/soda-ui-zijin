@@ -27,8 +27,8 @@
 
         <!-- Teleop (only in realtime mode) — launches scripts/teleop_quest.py
              via the backend. Green-phosphor: matches the in-UI overlay aesthetic
-             and signals "live data flowing" (distinct from HOME cyan, STOP red,
-             PANIC yellow). -->
+             and signals "live data flowing" (distinct from HOME cyan and
+             STOP red). -->
         <button v-if="mode === 'realtime'" class="tool-btn teleop-btn" :class="{ 'active': isTeleopRunning }"
                 :disabled="!isBackendUp"
                 @click="toggleTeleop"
@@ -57,15 +57,9 @@
           <span class="stop-label">STOP</span>
         </button>
 
-        <!-- PANIC / Force-Kill — emergency SIGKILL of the whole stack. Always
-             enabled (even when STOP is disabled), opens a hazard-stripe modal
-             with a 2-second hold-to-confirm ring. -->
-        <button class="tool-btn panic-btn"
-                @click="conn.openForceKill"
-                title="Emergency: SIGKILL all processes (hold-to-confirm)">
-          <span class="panic-glyph">⚠</span>
-          <span class="panic-label">PANIC</span>
-        </button>
+        <!-- Emergency stop lives in the fixed top-right corner (EmergencyStop
+             component, mounted at App.vue root) — single-click instant SIGKILL,
+             intentionally kept out of this toolbar to avoid mis-clicks. -->
 
         <!-- Recordings Dropdown (only in replay mode) -->
         <div v-if="mode === 'replay'" class="recordings-dropdown-wrapper">
@@ -131,6 +125,11 @@
       <div class="rail-slot">
         <StatusRail />
       </div>
+
+      <!-- Emergency stop — embedded at the far-right end of the bar, set apart
+           from the status rail. Single-click instant SIGKILL of the whole
+           stack (no modal, no hold). -->
+      <EmergencyStop />
     </div>
 
     <!-- Modals are mounted at App.vue root (stacking-context reasons), TopBar
@@ -149,6 +148,7 @@ import ToolIndicatorIcon from '@/components/icons/ToolIndicatorIcon.vue';
 import CoordinateIcon from '@/components/icons/Coordinate.vue';
 import DepthToolIcon from '@/components/icons/DepthToolIcon.vue';
 import StatusRail from '@/components/StatusRail.vue';
+import EmergencyStop from '@/components/EmergencyStop.vue';
 import { useConnectionStore } from '@/stores/connection';
 
 const conn = useConnectionStore();
@@ -548,7 +548,7 @@ onMounted(() => {
 .mode-toggle .mode-btn:disabled { opacity: 0.32; cursor: not-allowed; }
 
 /* TELE — green-phosphor: idle = colored outline, running = filled +
-   pulsing glow. Matches the HOME / STOP / PANIC pattern (border + label
+   pulsing glow. Matches the HOME / STOP pattern (border + label
    color + hover box-shadow). */
 .teleop-btn {
   background: rgba(8, 36, 16, 0.4);
@@ -652,47 +652,6 @@ onMounted(() => {
 .stop-btn:disabled .stop-label {
   color: #62717f;
   text-shadow: none;
-}
-
-/* PANIC — yellow/black hazard stripes + slow pulse so it draws the eye in
-   emergencies. Distinct from STOP's red stripes. Always enabled. */
-.panic-btn {
-  background-image:
-    repeating-linear-gradient(-45deg,
-      rgba(255,176,32,0.42) 0px, rgba(255,176,32,0.42) 5px,
-      rgba(20,16,8,0.55) 5px, rgba(20,16,8,0.55) 11px);
-  border: 1px solid rgba(255,176,32,0.55);
-  transition: all 0.15s;
-  display: flex; align-items: center; gap: 5px;
-  animation: panic-glow 2.6s ease-in-out infinite;
-  margin-left: 4px;
-  padding-left: 9px; padding-right: 9px;
-}
-.panic-btn:hover {
-  border-color: rgba(255,176,32,1);
-  box-shadow: 0 0 16px rgba(255,176,32,0.7);
-  background-image:
-    repeating-linear-gradient(-45deg,
-      rgba(255,176,32,0.7) 0px, rgba(255,176,32,0.7) 5px,
-      rgba(60,40,8,0.7) 5px, rgba(60,40,8,0.7) 11px);
-  animation: none;
-}
-.panic-glyph {
-  font-size: 14px;
-  color: #ffd060;
-  text-shadow: 0 0 8px rgba(255,208,96,0.85);
-  line-height: 1;
-}
-.panic-label {
-  font-size: 11px;
-  font-weight: 900;
-  color: #ffb020;
-  letter-spacing: 2px;
-  text-shadow: 0 0 6px rgba(255,176,32,0.75);
-}
-@keyframes panic-glow {
-  0%, 100% { box-shadow: 0 0 6px rgba(255,176,32,0.15); }
-  50%      { box-shadow: 0 0 16px rgba(255,176,32,0.55); }
 }
 
 .replay-controls {

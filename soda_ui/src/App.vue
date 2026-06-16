@@ -101,13 +101,6 @@
       @cancel="conn.closeStopConfirm"
     />
 
-    <!-- 8. Emergency PANIC modal (hold-to-confirm SIGKILL). Also root-mounted
-         so it always sits on top of LauncherCard / banners / anything else. -->
-    <ForceKillModal
-      :open="conn.forceKillOpen"
-      @close="conn.closeForceKill"
-    />
-
     <!-- 9. Teleop overlay — fullscreen phosphor modal shown while teleop is
          running. Replaces the OpenCV viewer popup; reuses our existing
          per-camera blob URLs (no new camera connection on the backend). -->
@@ -132,7 +125,6 @@ import LauncherCard from './components/LauncherCard.vue';
 import ZeroGravityBanner from './components/ZeroGravityBanner.vue';
 import RecoveryModal from './components/RecoveryModal.vue';
 import StopConfirmModal from './components/StopConfirmModal.vue';
-import ForceKillModal from './components/ForceKillModal.vue';
 import LogPanel from './components/LogPanel.vue';
 import TeleopOverlay from './components/TeleopOverlay.vue';
 import TeleopBanner from './components/TeleopBanner.vue';

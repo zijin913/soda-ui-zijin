@@ -92,17 +92,15 @@ export const useConnectionStore = defineStore('connection', () => {
   const recoveryFinishing = ref<boolean>(false)
   let recoveryStartingTimer: number | null = null
 
-  // Global modal mount state. We mount the modals at App.vue root so they
-  // sit in the same stacking context as LauncherCard (which has its own
-  // overlay) — z-index alone isn't enough when modals were nested inside
-  // TopBar (whose own stacking context capped them below LauncherCard's
-  // z-index: 200). Components anywhere call openStopConfirm / openForceKill.
+  // Global modal mount state. We mount the modal at App.vue root so it sits in
+  // the same stacking context as LauncherCard (which has its own overlay) —
+  // z-index alone isn't enough when modals were nested inside TopBar (whose
+  // own stacking context capped them below LauncherCard's z-index: 200).
+  // Components anywhere call openStopConfirm. (The old hold-to-confirm PANIC
+  // modal is gone — emergency stop is now a single-click instant estop().)
   const stopConfirmOpen = ref<boolean>(false)
-  const forceKillOpen = ref<boolean>(false)
   function openStopConfirm() { stopConfirmOpen.value = true }
   function closeStopConfirm() { stopConfirmOpen.value = false }
-  function openForceKill() { forceKillOpen.value = true }
-  function closeForceKill() { forceKillOpen.value = false }
 
   const launcherUrl = computed(defaultLauncherUrl)
   const backendUrl = computed(defaultBackendUrl)
@@ -438,11 +436,13 @@ export const useConnectionStore = defineStore('connection', () => {
     teleopOverlayDismissed.value = false
   }
 
-  // Emergency: SIGKILL the whole stack. Called by ForceKillModal's hold-to-
-  // confirm action. Launcher stays alive so the UI keeps polling.
-  async function forceKill(): Promise<{ ok: boolean; error?: string; killed?: number }> {
+  // Emergency stop: single-click, instant SIGKILL of the whole stack (except
+  // this launcher). Called by the EmergencyStop button and the LauncherCard's
+  // STOP. No confirmation, no grace period — the launcher stays alive so the
+  // UI keeps polling and the operator returns to the LauncherCard to relaunch.
+  async function estop(): Promise<{ ok: boolean; error?: string; killed?: number }> {
     try {
-      const r = await fetch(`${launcherUrl.value}/launcher/force_kill`, {
+      const r = await fetch(`${launcherUrl.value}/launcher/estop`, {
         method: 'POST',
       })
       if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
@@ -523,15 +523,15 @@ export const useConnectionStore = defineStore('connection', () => {
     teleopStatus, teleopConnected, teleopClosed, teleopOverlayDismissed,
     homing,
     recoveryModalDismissed, recoveryStarting, recoveryFinishing,
-    stopConfirmOpen, forceKillOpen,
+    stopConfirmOpen,
     hwLogs, backendLogs,
     // urls
     launcherUrl, backendUrl, wsUrl,
     isOperational,
     // actions
     startPolling, stopPolling, pollOnce, pollMetricsOnce, pollTeleopOnce,
-    launch, stop, finishRecovery, forceKill,
-    openStopConfirm, closeStopConfirm, openForceKill, closeForceKill,
+    launch, stop, finishRecovery, estop,
+    openStopConfirm, closeStopConfirm,
     confirmStop,
     beginRecoveryStarting, endRecoveryStarting,
     sendTeleopKey, sendTeleopInstruction, stopTeleop, goHome, openTeleopWs, closeTeleopWs,
