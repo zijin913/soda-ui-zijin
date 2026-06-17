@@ -62,47 +62,72 @@
             </label>
 
             <div class="hp-field">
-              <span class="hp-lbl">RUN PARAMETERS
-                <em class="hp-sub">{{ active ? '· smoothness/speed/latch apply live' : '· from policy, tweak per run' }}</em>
-              </span>
+              <div class="hp-rp-head">
+                <span class="hp-lbl">RUN PARAMETERS
+                  <em class="hp-sub">{{ active ? '· smoothness/speed/latch apply live' : '· starts from policy default' }}</em>
+                </span>
+                <span class="hp-rp-actions">
+                  <span v-if="railMsg" class="hp-rp-msg">{{ railMsg }}</span>
+                  <button class="hp-mini" :disabled="!entry" @click="resetRail"
+                          title="Discard tweaks and reload this policy's saved defaults.">↺</button>
+                  <button class="hp-mini save" :disabled="!entry || railSaving" @click="saveRailAsDefault"
+                          title="Save the run parameters above as this policy's defaults (advanced knobs unchanged). Built-in policies are saved as your own copy.">
+                    {{ railSaving ? '…' : '💾 save default' }}</button>
+                </span>
+              </div>
               <div class="hp-rp">
-                <label class="hp-rp-row" title="Action-chunk length the server emits (ensemble horizon). Applied at start.">
-                  <span>action chunk H</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.infer_mode">inference <i class="hp-i">ⓘ</i></span>
+                  <div class="hp-seg sm">
+                    <button class="hp-seg-btn" :class="{ sel: rp.infer_mode === 'async' }" :disabled="active"
+                            @click="rp.infer_mode = 'async'">async</button>
+                    <button class="hp-seg-btn" :class="{ sel: rp.infer_mode === 'sync' }" :disabled="active"
+                            @click="rp.infer_mode = 'sync'">sync</button>
+                  </div>
+                  <em class="hp-lock">{{ active ? 'locked' : 'start' }}</em>
+                </label>
+                <label v-if="rp.infer_mode === 'sync'" class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.exec_horizon">execute K <i class="hp-i">ⓘ</i></span>
+                  <input type="number" min="1" v-model.number="rp.exec_horizon" class="hp-num" />
+                  <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
+                </label>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.chunk_h">action chunk H <i class="hp-i">ⓘ</i></span>
                   <input type="number" min="1" v-model.number="rp.chunk_h" class="hp-num" :disabled="active" />
                   <em class="hp-lock">{{ active ? 'locked' : 'start' }}</em>
                 </label>
-                <label class="hp-rp-row" title="Policy execution rate — keep matched to the training dt (50). Applied at start.">
-                  <span>control Hz</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.control_hz">control Hz <i class="hp-i">ⓘ</i></span>
                   <input type="number" min="1" v-model.number="rp.control_hz" class="hp-num" :disabled="active" />
                   <em class="hp-lock">{{ active ? 'locked' : 'start' }}</em>
                 </label>
-                <label class="hp-rp-row" title="Temporal-ensemble decay. Higher = smoother but laggier action blend.">
-                  <span>smoothness</span>
-                  <input type="range" min="0" max="0.5" step="0.02" v-model.number="rp.ensemble_decay" />
-                  <em>{{ rp.ensemble_decay }}</em>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.smoothness">smoothness <i class="hp-i">ⓘ</i></span>
+                  <input type="range" min="0" max="0.5" step="0.02" v-model.number="rp.ensemble_decay" :disabled="rp.infer_mode === 'sync'" />
+                  <em>{{ rp.infer_mode === 'sync' ? 'async only' : rp.ensemble_decay }}</em>
                 </label>
-                <label class="hp-rp-row" title="Per-tick joint speed cap (rad). Lower = gentler/slower.">
-                  <span>speed limit</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.speed">speed limit <i class="hp-i">ⓘ</i></span>
                   <input type="range" min="0.02" max="0.2" step="0.01" v-model.number="rp.max_joint_delta" />
                   <em>{{ rp.max_joint_delta }}</em>
                 </label>
-                <label class="hp-rp-row" title="Latch the gripper open/closed to stop chatter.">
-                  <span>latch gripper</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.latch">latch gripper <i class="hp-i">ⓘ</i></span>
                   <input type="checkbox" v-model="rp.binarize_gripper" />
                   <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
                 </label>
-                <label class="hp-rp-row" title="Auto-stop after this many control steps (0 = run until you press STOP). Applied at start.">
-                  <span>episode steps</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.max_steps">episode steps <i class="hp-i">ⓘ</i></span>
                   <input type="number" min="0" step="100" v-model.number="rp.max_steps" class="hp-num" :disabled="active" />
                   <em class="hp-lock">{{ rp.max_steps ? (active ? 'locked' : 'start') : '∞' }}</em>
                 </label>
-                <label class="hp-rp-row" title="Save the model-view video + tracking.csv for this rollout to output/policy_runs/.">
-                  <span>record run</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.record">record run <i class="hp-i">ⓘ</i></span>
                   <input type="checkbox" v-model="rp.record" :disabled="active" />
                   <em class="hp-lock">start</em>
                 </label>
-                <label v-if="rp.record" class="hp-rp-row" title="Folder name under output/policy_runs/<policy>/. Blank = timestamp.">
-                  <span>run name</span>
+                <label v-if="rp.record" class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.run_name">run name <i class="hp-i">ⓘ</i></span>
                   <input v-model="rp.run_name" class="hp-num hp-name" :disabled="active" placeholder="(timestamp)" />
                   <em class="hp-lock">start</em>
                 </label>
@@ -112,53 +137,53 @@
             <div class="hp-field">
               <button class="hp-adv-toggle" @click="advOpen = !advOpen">{{ advOpen ? '▾' : '▸' }} Advanced (expert)</button>
               <div v-if="advOpen" class="hp-rp">
-                <label class="hp-rp-row" title="Hardware streaming/interpolation rate between control ticks. Applied at start.">
-                  <span>send Hz</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.send_hz">send Hz <i class="hp-i">ⓘ</i></span>
                   <input type="number" min="1" v-model.number="adv.send_hz" class="hp-num" :disabled="active" />
                   <em class="hp-lock">start</em>
                 </label>
-                <label class="hp-rp-row" title="Per-tick gripper speed cap.">
-                  <span>gripper Δ cap</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.gripper_cap">gripper Δ cap <i class="hp-i">ⓘ</i></span>
                   <input type="number" step="0.05" v-model.number="adv.max_gripper_delta" class="hp-num" />
                   <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
                 </label>
-                <label class="hp-rp-row" title="Ensemble outlier rejection threshold (rad). Applied at start.">
-                  <span>reject outlier</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.reject">reject outlier <i class="hp-i">ⓘ</i></span>
                   <input type="number" step="0.1" v-model.number="adv.reject_outlier" class="hp-num" :disabled="active" />
                   <em class="hp-lock">start</em>
                 </label>
-                <label class="hp-rp-row" title="Disable the 1-euro output filter entirely. Applied at start.">
-                  <span>no smoothing</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.no_smooth">no smoothing <i class="hp-i">ⓘ</i></span>
                   <input type="checkbox" v-model="adv.no_smooth" :disabled="active" />
                   <em class="hp-lock">start</em>
                 </label>
-                <label class="hp-rp-row" title="1-euro min cutoff Hz (lower = smoother).">
-                  <span>1€ min-cut</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.mincut">1€ min-cut <i class="hp-i">ⓘ</i></span>
                   <input type="number" step="0.1" v-model.number="adv.smooth_mincut" class="hp-num" :disabled="adv.no_smooth" />
                   <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
                 </label>
-                <label class="hp-rp-row" title="1-euro beta (higher = less lag when fast, less smoothing).">
-                  <span>1€ beta</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.beta">1€ beta <i class="hp-i">ⓘ</i></span>
                   <input type="number" step="0.05" v-model.number="adv.smooth_beta" class="hp-num" :disabled="adv.no_smooth" />
                   <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
                 </label>
-                <label class="hp-rp-row" title="Integral correction for gravity under-reach (usually off — server-side gravity comp handles it). Applied at start.">
-                  <span>sag comp</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.sag_comp">sag comp <i class="hp-i">ⓘ</i></span>
                   <input type="checkbox" v-model="adv.sag_comp" :disabled="active" />
                   <em class="hp-lock">start</em>
                 </label>
-                <label class="hp-rp-row" title="Sag integral gain.">
-                  <span>sag ki</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.sag_ki">sag ki <i class="hp-i">ⓘ</i></span>
                   <input type="number" step="0.01" v-model.number="adv.sag_ki" class="hp-num" :disabled="active || !adv.sag_comp" />
                   <em class="hp-lock">start</em>
                 </label>
-                <label class="hp-rp-row" title="Sag correction cap (rad).">
-                  <span>sag cap</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.sag_cap">sag cap <i class="hp-i">ⓘ</i></span>
                   <input type="number" step="0.01" v-model.number="adv.sag_cap" class="hp-num" :disabled="active || !adv.sag_comp" />
                   <em class="hp-lock">start</em>
                 </label>
-                <label class="hp-rp-row" title="Move-to-home duration for LIVE mode (seconds). Applied at start.">
-                  <span>home secs</span>
+                <label class="hp-rp-row">
+                  <span class="hp-help" :title="TIPS.home">home secs <i class="hp-i">ⓘ</i></span>
                   <input type="number" step="0.5" v-model.number="adv.home_duration_sec" class="hp-num" :disabled="active" />
                   <em class="hp-lock">start</em>
                 </label>
@@ -173,12 +198,12 @@
           <!-- ── Right main: what the model sees + telemetry ── -->
           <section class="hp-main">
             <div class="hp-main-bar">WHAT THE MODEL SEES <span class="hp-main-sub">(exact 224 input · {{ entry?.image_mode }})</span></div>
-            <div class="hp-views">
-              <figure v-for="v in views" :key="v.cam" class="hp-view">
-                <img v-if="showViews" :src="viewSrc(v.cam)" class="hp-img" :alt="v.label" />
-                <div v-else class="hp-img hp-img-empty">{{ phase === 'idle' ? 'press ' + startLabel : 'no signal' }}</div>
-                <figcaption>{{ v.label }}</figcaption>
-              </figure>
+            <div class="hp-views-one">
+              <img v-if="showViews" :src="viewSrc('all')" class="hp-img-wide" alt="model view" />
+              <div v-else class="hp-img-wide hp-img-empty">{{ phase === 'idle' ? 'press ' + startLabel : 'waiting for frames…' }}</div>
+              <div class="hp-view-caps">
+                <span v-for="v in views" :key="v.cam">{{ v.label }}</span>
+              </div>
             </div>
             <div class="hp-meters">
               <div class="hp-meter"><span>infer</span><b>{{ fmt(status.infer_p50_ms) }} ms</b></div>
@@ -224,7 +249,28 @@
               </select></label>
             <label class="hp-srv-row"><span>gripper close</span>
               <input type="number" step="0.01" v-model.number="np.gripper_close" class="hp-input" /></label>
-            <div class="hp-form-note2">chunk / control-rate &amp; tuning are set per-run in the left panel.</div>
+
+            <div class="hp-form-sec">run defaults <span>initial values; tweak per-run in the left panel</span></div>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.infer_mode">inference <i class="hp-i">ⓘ</i></span>
+              <div class="hp-seg sm">
+                <button class="hp-seg-btn" :class="{ sel: np.infer_mode === 'async' }" @click="np.infer_mode = 'async'">async</button>
+                <button class="hp-seg-btn" :class="{ sel: np.infer_mode === 'sync' }" @click="np.infer_mode = 'sync'">sync</button>
+              </div></label>
+            <label v-if="np.infer_mode === 'sync'" class="hp-srv-row"><span class="hp-help" :title="TIPS.exec_horizon">execute K <i class="hp-i">ⓘ</i></span>
+              <input type="number" min="1" v-model.number="np.exec_horizon" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.chunk_h">action chunk H <i class="hp-i">ⓘ</i></span>
+              <input type="number" min="1" v-model.number="np.chunk_h" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.control_hz">control Hz <i class="hp-i">ⓘ</i></span>
+              <input type="number" min="1" v-model.number="np.control_hz" class="hp-input" /></label>
+            <label v-if="np.infer_mode === 'async'" class="hp-srv-row"><span class="hp-help" :title="TIPS.smoothness">smoothness <i class="hp-i">ⓘ</i></span>
+              <input type="number" step="0.02" v-model.number="np.ensemble_decay" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.speed">speed limit <i class="hp-i">ⓘ</i></span>
+              <input type="number" step="0.01" v-model.number="np.max_joint_delta" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.latch">latch gripper <i class="hp-i">ⓘ</i></span>
+              <input type="checkbox" v-model="np.binarize_gripper" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.max_steps">episode steps <i class="hp-i">ⓘ</i></span>
+              <input type="number" min="0" step="100" v-model.number="np.max_steps" class="hp-input" /></label>
+
             <div v-if="formErr" class="hp-msg err">{{ formErr }}</div>
             <div class="hp-srv-foot">
               <button class="hp-btn ghost sm" @click="formOpen = false">CANCEL</button>
@@ -254,6 +300,78 @@ const views = [
   { cam: 'cam_right_wrist', label: 'right wrist' },
 ];
 
+// Detailed hover help for each parameter (native title tooltips).
+const TIPS = {
+  infer_mode:
+    'Inference scheme.\n' +
+    '• async (default): a background worker infers continuously while ACT temporal ensembling blends overlapping predictions every control tick — smooth, no stalls, effectively replans every step.\n' +
+    '• sync: blocking infer → execute the first K steps open-loop → re-infer. Predictable / reproducible, but the arm briefly holds during each inference.\n' +
+    'Applied at start (locked while running).',
+  exec_horizon:
+    'sync only. How many steps of each predicted chunk to execute before re-inferring (open-loop horizon K, clamped to chunk H).\n' +
+    'Smaller K = replans more often (more reactive, more inference load); larger K = smoother but more open-loop drift.\n' +
+    'Editable live — takes effect on the next chunk.',
+  chunk_h:
+    'Action chunk length H — the number of future steps the model returns per inference.\n' +
+    'Must match what your checkpoint outputs (run PROBE and read chunk_shape). In async it also sets the temporal-ensemble window.\n' +
+    'Applied at start.',
+  control_hz:
+    'Policy execution rate in Hz. Keep it matched to the dt the policy was trained at (usually 50) — changing it desyncs action timing from training.\n' +
+    'Applied at start.',
+  smoothness:
+    'async only — temporal-ensemble decay.\n' +
+    'Higher = predictions blended over a longer window (smoother, but slower to react to changes); 0 = use only the newest chunk.\n' +
+    'Editable live.',
+  speed:
+    'Per-tick cap on joint movement (radians). Safety / anti-jerk limit.\n' +
+    'Lower = gentler and slower; higher = faster but can snap. Editable live.',
+  latch:
+    'Schmitt-trigger the gripper: latch fully open / fully closed instead of following the raw continuous value, which stops open/close chatter near the threshold.\n' +
+    'Editable live.',
+  max_steps:
+    'Auto-stop the rollout after this many control steps (0 = run until you press STOP).\n' +
+    'Use for fixed-length, repeatable episodes. Applied at start.',
+  record:
+    'Save this rollout to output/policy_runs/<policy>/<run name>/:\n' +
+    '• policy_view.mp4 — exactly what the model saw\n' +
+    '• tracking.csv — per-step commanded targets\n' +
+    'Applied at start.',
+  run_name:
+    'Folder name for the recording under output/policy_runs/<policy>/. Leave blank to use a timestamp.\n' +
+    'Applied at start.',
+  send_hz:
+    'Hardware streaming rate (Hz). Each control step is linearly interpolated into substeps sent at this rate, so the arm glides smoothly between policy targets.\n' +
+    'Higher = smoother streaming (more network/CAN traffic). Default 250. Applied at start.',
+  gripper_cap:
+    'Per-tick cap on gripper position change. Prevents the gripper from snapping fully open/closed in a single step.\n' +
+    'Lower = gentler gripper. Editable live.',
+  reject:
+    'async only — temporal-ensemble outlier rejection threshold (radians).\n' +
+    'A chunk’s prediction for the current step is dropped if it deviates from the consensus by more than this, so one bad inference can’t jerk the arm.\n' +
+    'Lower = stricter. Applied at start.',
+  no_smooth:
+    'Disable the 1-euro output filter entirely (raw policy actions go straight to the speed limiter).\n' +
+    'Mainly for A/B testing, or if the filter adds too much lag. Default off (filter on). Applied at start.',
+  mincut:
+    '1-euro filter minimum cutoff (Hz). Baseline smoothing when the arm is nearly still:\n' +
+    'lower = smoother but more lag; higher = more responsive but more jitter. Editable live.',
+  beta:
+    '1-euro filter beta. Controls how much the filter “opens up” during fast motion:\n' +
+    'higher = less lag when moving quickly (but less smoothing). Tune together with min-cut. Editable live.',
+  sag_comp:
+    'Integral correction for gravity under-reach (the arm settling below the commanded target).\n' +
+    'Usually OFF — the low-level server already does gravity compensation. Enable only if you still see consistent under-reach. Applied at start.',
+  sag_ki:
+    'Integral gain for sag compensation (only used when “sag comp” is on).\n' +
+    'Higher = corrects under-reach faster but can overshoot. Applied at start.',
+  sag_cap:
+    'Maximum correction (radians) the sag integral may add — a safety clamp (only used when “sag comp” is on).\n' +
+    'Applied at start.',
+  home:
+    'Duration (seconds) of the smooth move-to-home performed before a LIVE rollout begins.\n' +
+    'Lower = quicker homing; higher = gentler. Applied at start.',
+};
+
 // per-run selections (NOT policy definition)
 const selectedId = ref('');
 const prompt = ref('');
@@ -267,10 +385,14 @@ const editingId = ref(null);
 const formErr = ref('');
 const np = reactive({
   name: '', host: '', port: 8001, prompts: '', image_mode: 'stretch43', gripper_close: 0.67,
+  // run-param defaults (initial values for a new policy)
+  infer_mode: 'async', exec_horizon: 15, chunk_h: 50, control_hz: 50,
+  ensemble_decay: 0.1, max_joint_delta: 0.05, binarize_gripper: true, max_steps: 0,
 });
 
 // per-run run parameters (prefilled from the policy; soft knobs live-updatable)
 const rp = reactive({
+  infer_mode: 'async', exec_horizon: 15,
   chunk_h: 50, control_hz: 50, ensemble_decay: 0.1, max_joint_delta: 0.05, binarize_gripper: true,
   max_steps: 0, record: false, run_name: '',
 });
@@ -289,7 +411,9 @@ const status = computed(() => conn.policyStatus || { phase: 'idle' });
 const phase = computed(() => status.value.phase || 'idle');
 const active = computed(() => conn.policyActive);
 const message = computed(() => status.value.error || status.value.message || '');
-const showViews = computed(() => conn.backend === 'up' && ['probe', 'running', 'homing'].includes(phase.value));
+// Show the model-view whenever the backend is up — the /policy/view stream
+// serves a live camera composite even when idle (no rollout running).
+const showViews = computed(() => conn.backend === 'up');
 const editingBuiltin = computed(() => editingId.value && !!policies.value.find((p) => p.id === editingId.value && p.builtin));
 
 const phaseLabel = computed(() => ({
@@ -305,17 +429,45 @@ function fmt(v) {
 }
 function viewSrc(cam) { return `${conn.backendUrl}/policy/view?cam=${cam}&n=${viewNonce.value}`; }
 
+// The non-advanced run parameters, abstracted in one place. They live in the
+// policy as saved DEFAULTS (info.chunk_h/control_hz + defaults.*); the rail is a
+// working copy that starts from them, and "save as default" writes back.
+function _loadRunParams(t, e) {
+  t.infer_mode = e?.defaults?.infer_mode ?? 'async';
+  t.exec_horizon = e?.defaults?.exec_horizon ?? 15;
+  t.chunk_h = e?.info?.chunk_h ?? 50;
+  t.control_hz = e?.info?.control_hz ?? e?.defaults?.control_hz ?? 50;
+  t.ensemble_decay = e?.defaults?.ensemble_decay ?? 0.1;
+  t.max_joint_delta = e?.defaults?.max_joint_delta ?? 0.05;
+  t.binarize_gripper = e?.defaults?.binarize_gripper ?? true;
+  t.max_steps = e?.defaults?.max_steps ?? 0;
+}
+// Build the persisted info/defaults from a run-param source (np or rp),
+// preserving any existing (e.g. advanced) defaults in baseDefaults.
+function _persistPieces(src, baseDefaults) {
+  return {
+    info: { chunk_h: src.chunk_h, control_hz: src.control_hz },
+    defaults: {
+      ...(baseDefaults || {}),
+      infer_mode: src.infer_mode, exec_horizon: src.exec_horizon, control_hz: src.control_hz,
+      ensemble_decay: src.ensemble_decay, max_joint_delta: src.max_joint_delta,
+      binarize_gripper: src.binarize_gripper, max_steps: src.max_steps,
+    },
+  };
+}
+
+// NOTE: the model-view is ONE stable MJPEG connection per modal-open — it always
+// reflects the live cameras, so it must NOT reconnect on every run/phase change
+// (reconnect churn piled up browser connections and blanked the view after a few
+// runs). viewNonce is bumped only when the modal (re)opens.
+
 // when the selected policy changes, refresh the per-run prompt + run-params
 // from its defaults (don't clobber while a rollout is live).
 watch(entry, (e) => {
   if (!e) return;
   if (!prompt.value || !(e.prompts || []).includes(prompt.value)) prompt.value = (e.prompts || [''])[0];
   if (active.value) return;
-  rp.chunk_h = e.info?.chunk_h ?? 50;
-  rp.control_hz = e.info?.control_hz ?? e.defaults?.control_hz ?? 50;
-  rp.ensemble_decay = e.defaults?.ensemble_decay ?? 0.1;
-  rp.max_joint_delta = e.defaults?.max_joint_delta ?? 0.05;
-  rp.binarize_gripper = e.defaults?.binarize_gripper ?? true;
+  _loadRunParams(rp, e);
   const d = e.defaults || {};
   adv.send_hz = d.send_hz ?? 250;
   adv.max_gripper_delta = d.max_gripper_delta ?? 0.5;
@@ -329,13 +481,14 @@ watch(entry, (e) => {
 // push soft-knob changes to a live rollout (debounced); structural params
 // (chunk_h, control_hz) only apply at the next start.
 let _rpTimer = null;
-watch(() => [rp.ensemble_decay, rp.max_joint_delta, rp.binarize_gripper,
+watch(() => [rp.ensemble_decay, rp.max_joint_delta, rp.binarize_gripper, rp.exec_horizon,
              adv.smooth_mincut, adv.smooth_beta, adv.max_gripper_delta], () => {
   if (!active.value) return;
   if (_rpTimer) clearTimeout(_rpTimer);
   _rpTimer = setTimeout(() => {
     conn.updatePolicyParams({
       ensemble_decay: rp.ensemble_decay, max_joint_delta: rp.max_joint_delta, binarize_gripper: rp.binarize_gripper,
+      exec_horizon: rp.exec_horizon,
       smooth_mincut: adv.smooth_mincut, smooth_beta: adv.smooth_beta, max_gripper_delta: adv.max_gripper_delta,
     });
   }, 150);
@@ -344,6 +497,7 @@ watch(() => [rp.ensemble_decay, rp.max_joint_delta, rp.binarize_gripper,
 // ── run (per-run choices; structural params from rp, rest from the policy) ──
 async function onStart() {
   const overrides = {
+    infer_mode: rp.infer_mode, exec_horizon: rp.exec_horizon,
     chunk_h: rp.chunk_h, control_hz: rp.control_hz, ensemble_decay: rp.ensemble_decay,
     max_joint_delta: rp.max_joint_delta, binarize_gripper: rp.binarize_gripper, max_steps: rp.max_steps,
     record: rp.record, run_name: rp.run_name,
@@ -353,7 +507,6 @@ async function onStart() {
   };
   const r = await conn.startPolicy({ policy_id: selectedId.value, prompt: prompt.value, mode: mode.value, overrides });
   if (!r.ok) conn.lastError = `Policy start failed: ${r.error}`;
-  else viewNonce.value++;
 }
 async function onStop() { await conn.stopPolicy(); }
 function onDismiss() { conn.dismissHostPolicy(); }
@@ -370,6 +523,7 @@ function _loadForm(e) {
   np.prompts = (e?.prompts || []).join('\n');
   np.image_mode = e?.image_mode || 'stretch43';
   np.gripper_close = e?.gripper_close ?? 0.67;
+  _loadRunParams(np, e);
 }
 function openAdd() {
   formErr.value = '';
@@ -387,10 +541,15 @@ function openEdit() {
 }
 async function onSavePolicy() {
   formErr.value = '';
+  const base = editingId.value
+    ? (policies.value.find((p) => p.id === editingId.value)?.defaults || {})
+    : {};
+  const pieces = _persistPieces(np, base);
   const body = {
     name: np.name, type: 'openpi_ws', host: np.host, port: np.port,
     prompts: np.prompts.split('\n').map((s) => s.trim()).filter(Boolean),
     image_mode: np.image_mode, gripper_close: np.gripper_close,
+    info: pieces.info, defaults: pieces.defaults,
   };
   if (editingId.value) body.id = editingId.value;  // edit (built-in -> override under same id)
   const r = await conn.savePolicy(body);
@@ -398,6 +557,28 @@ async function onSavePolicy() {
   formOpen.value = false;
   if (r.id) selectedId.value = r.id;
 }
+
+// "save as default": promote the current rail run-params to the policy's saved
+// defaults (advanced knobs are left untouched). Built-in -> saved as a user copy.
+const railSaving = ref(false);
+const railMsg = ref('');
+async function saveRailAsDefault() {
+  const e = entry.value;
+  if (!e) return;
+  railSaving.value = true;
+  const pieces = _persistPieces(rp, e.defaults || {});
+  const body = {
+    id: e.id, name: e.name, type: e.type || 'openpi_ws', host: e.host, port: e.port,
+    prompts: e.prompts || [], image_mode: e.image_mode, gripper_close: e.gripper_close,
+    info: { ...(e.info || {}), ...pieces.info }, defaults: pieces.defaults,
+  };
+  const r = await conn.savePolicy(body);
+  railSaving.value = false;
+  railMsg.value = r.ok ? 'saved as default ✓' : `save failed: ${r.error}`;
+  if (r.ok && r.id) selectedId.value = r.id;
+  setTimeout(() => { railMsg.value = ''; }, 2500);
+}
+function resetRail() { if (entry.value) _loadRunParams(rp, entry.value); }
 async function onDeletePolicy() {
   if (!entry.value || entry.value.builtin) return;
   const r = await conn.deletePolicy(selectedId.value);
@@ -493,6 +674,12 @@ watch(() => conn.hostPolicyOpen, (o) => {
 }
 .hp-form-note { font-size: 12px; color: #ffd28a; }
 .hp-form-sec { font-size: 11.5px; letter-spacing: 1px; color: #8a6a30; margin-top: 4px; border-top: 1px solid #3a2c14; padding-top: 6px; }
+.hp-form-sec span { letter-spacing: 0; color: #6b5424; margin-left: 6px; }
+.hp-rp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hp-rp-actions { display: flex; align-items: center; gap: 6px; }
+.hp-rp-msg { font-size: 11.5px; color: #8ff0a0; }
+.hp-mini.save { font-size: 12px; padding: 5px 10px; color: #ffd28a; }
+.hp-mini.save:hover:not(:disabled) { border-color: #ffb347; color: #1a1206; background: #ffb347; }
 .hp-srv-row-top { align-items: start; }
 .hp-ta { min-height: 56px; resize: vertical; }
 
@@ -503,6 +690,10 @@ watch(() => conn.hostPolicyOpen, (o) => {
 .hp-num:disabled { opacity: 0.55; }
 .hp-name { width: 150px; }
 .hp-rp-row em { text-align: right; color: #ffe6c2; font-style: normal; }
+.hp-help { cursor: help; border-bottom: 1px dotted #5a4214; }
+.hp-help:hover { color: #ffe6c2; border-bottom-color: #ffb347; }
+.hp-i { font-style: normal; font-size: 11px; color: #8a6a30; margin-left: 3px; }
+.hp-help:hover .hp-i { color: #ffb347; }
 .hp-lock { font-size: 11px; color: #8a6a30; }
 .hp-live { color: #8ff0a0; font-size: 12px; }
 .hp-form-note2 { font-size: 12px; color: #8a6a30; border-top: 1px solid #3a2c14; padding-top: 8px; }
@@ -520,16 +711,18 @@ watch(() => conn.hostPolicyOpen, (o) => {
 .hp-seg-btn.sel { background: linear-gradient(180deg, #6b4d14, #4a3410); color: #fff0d0; }
 .hp-seg-btn:disabled { opacity: 0.5; cursor: default; }
 .hp-mode-hint { font-size: 12.5px; color: #8a6a30; }
+.hp-seg.sm { display: inline-flex; }
+.hp-seg.sm .hp-seg-btn { padding: 4px 14px; font-size: 13px; }
 
 .hp-confirm { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #ffd28a; }
 .hp-msg { font-size: 14px; color: #d9b878; border-left: 2px solid #5a4214; padding: 6px 10px; background: #06080b; }
 .hp-msg.err { color: #ff8a7a; border-color: #6b2e2e; }
 
-.hp-views { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.hp-view { display: flex; flex-direction: column; min-height: 0; gap: 4px; }
-.hp-img { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; border: 1px solid #3a2c14; border-radius: 4px; }
+.hp-views-one { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.hp-img-wide { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; border: 1px solid #3a2c14; border-radius: 4px; }
 .hp-img-empty { display: flex; align-items: center; justify-content: center; color: #6b5424; font-size: 15px; letter-spacing: 1px; }
-.hp-view figcaption { font-size: 13px; color: #b88a3a; text-align: center; letter-spacing: 0.5px; flex-shrink: 0; }
+.hp-view-caps { display: flex; flex-shrink: 0; }
+.hp-view-caps span { flex: 1; text-align: center; font-size: 13px; color: #b88a3a; letter-spacing: 0.5px; }
 .hp-meters { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; flex-shrink: 0; }
 .hp-meter { background: #06080b; border: 1px solid #3a2c14; border-radius: 3px; padding: 8px 10px; }
 .hp-meter span { display: block; font-size: 12px; color: #b88a3a; letter-spacing: 0.5px; }
