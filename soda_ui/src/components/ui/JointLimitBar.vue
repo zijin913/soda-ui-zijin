@@ -110,13 +110,13 @@ const hoverText = computed(() =>
 .m-red   { background: #ff4438; box-shadow: 0 0 8px #ff4438; }
 
 .lab {
-  font-size: 9px;
+  font-size: 13.5px;
   color: #62717f;
   letter-spacing: 0.8px;
   text-transform: uppercase;
 }
 .val {
-  font-size: 9.5px;
+  font-size: 14.2px;
   color: #c6d3e0;
 }
 .v-grn   { color: #36e08a; }

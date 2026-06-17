@@ -105,7 +105,7 @@ const uptime = computed(() => {
   align-items: center;
   gap: 5px;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 16.5px;
 }
 .vsep {
   width: 1px;

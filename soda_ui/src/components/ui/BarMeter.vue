@@ -65,13 +65,13 @@ const display = computed(() => props.value.toFixed(props.decimals));
   opacity: 0.6;
 }
 .lab {
-  font-size: 9px;
+  font-size: 13.5px;
   color: #62717f;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
 .val {
-  font-size: 10px;
+  font-size: 15px;
   color: #c6d3e0;
 }
 .v-grn   { color: #36e08a; }

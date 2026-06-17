@@ -829,7 +829,7 @@ onUnmounted(() => {
 
   font-weight: bold;
 
-  font-size: 14px;
+  font-size: 21px;
 
   backdrop-filter: blur(4px);
 

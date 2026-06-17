@@ -1,5 +1,10 @@
 <template>
 <header class="top-bar">
+    <!-- Transient error toast (teleop/home/policy failures) so the reason is
+         visible in the operational view, not just on the launcher card. -->
+    <div v-if="errToast" class="err-toast" @click="errToast = ''" :title="errToast">
+      ⚠ {{ errToast }}
+    </div>
     <div class="top-bar-content">
       <!-- Logo -->
       <div class="icon-box logo-box">
@@ -59,7 +64,7 @@
                         isTeleopRunning ? 'Stop teleop first' :
                         isCalibActive ? 'Stop calibration first' :
                         'Host a policy (pick policy + params, then run)'">
-          <span class="policy-label" :class="{ 'running': isPolicyActive }">POLICY</span>
+          <span class="policy-label" :class="{ 'running': isPolicyActive }">POL</span>
         </button>
 
         <!-- HOME — move both arms to home pose. During teleop routes through
@@ -163,7 +168,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import LogoIcon from '@/components/icons/LogoIcon.vue';
 import HandToolIcon from '@/components/icons/HandToolIcon.vue';
 import MoveToolIcon from '@/components/icons/MoveToolIcon.vue';
@@ -177,6 +182,18 @@ import EmergencyStop from '@/components/EmergencyStop.vue';
 import { useConnectionStore } from '@/stores/connection';
 
 const conn = useConnectionStore();
+
+// Surface backend errors (e.g. teleop "No Quest device found") as a visible
+// toast in the operational view — otherwise conn.lastError only shows on the
+// launcher card / teleop overlay, so a failed TELE click looks like nothing.
+const errToast = ref('');
+let _errTimer = null;
+watch(() => conn.lastError, (e) => {
+  if (!e) return;
+  errToast.value = e;
+  if (_errTimer) clearTimeout(_errTimer);
+  _errTimer = setTimeout(() => { errToast.value = ''; }, 7000);
+});
 const isBackendUp = computed(() => conn.backend === 'up');
 const canStop = computed(() => conn.launcher === 'up' && (conn.backend === 'up' || conn.hw === 'up'));
 const backendDisabledTitle = computed(() =>
@@ -239,8 +256,14 @@ const toggleTeleop = async () => {
       // waiting for the next 2s poll tick.
       await conn.pollTeleopOnce();
       emit('teleopToggled', isTeleopRunning.value);
+    } else {
+      // Surface the backend's reason (e.g. "No Quest device found … adb devices")
+      // instead of a silent flash-and-quit.
+      const data = await response.json().catch(() => ({}));
+      conn.lastError = data?.error || `Teleop ${isTeleopRunning.value ? 'stop' : 'start'} failed (HTTP ${response.status})`;
     }
   } catch (error) {
+    conn.lastError = `Teleop request failed: ${error}`;
     console.error('Failed to toggle teleop:', error);
   }
 };
@@ -349,6 +372,29 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
+.err-toast {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  min-width: 420px;
+  z-index: 200;
+  background: linear-gradient(180deg, #2a0f0f, #1a0a0a);
+  border: 2px solid #ff6b5a;
+  color: #ffe2dc;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 18px;
+  line-height: 1.45;
+  font-weight: 600;
+  padding: 18px 26px;
+  border-radius: 10px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6), 0 0 22px rgba(255, 107, 90, 0.25);
+  cursor: pointer;
+  white-space: normal;        /* wrap so the full message is readable */
+  text-align: center;
+}
+
 .top-bar-content {
   background: linear-gradient(180deg, #10161e, #0d1218);
   border: 1px solid #27323f;
@@ -357,7 +403,7 @@ onMounted(() => {
   height: 100%;
   display: flex;
   align-items: center;
-  padding: 0 14px;
+  padding: 0 32px;
   position: relative;
   box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset,
               0 6px 18px rgba(0,0,0,0.4);
@@ -373,12 +419,12 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 18px;
+  margin-right: 28px;
 }
 
 .toolbar-group {
   display: flex;
-  gap: 8px;
+  gap: 22px;
   align-items: center;
 }
 
@@ -386,7 +432,7 @@ onMounted(() => {
   width: 1px;
   height: 36px;
   background: #19212b;
-  margin: 0 6px;
+  margin: 0 22px;
 }
 
 .tool-btn {
@@ -416,6 +462,21 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+/* The five labeled action boxes (TELE / CAL / POL / HOME / STOP). Unlike the
+   square icon buttons they hold text, so size to content with horizontal
+   padding (prevents HOME/labels from spilling past the box) and run a touch
+   larger than the 54px icon buttons. */
+.teleop-btn,
+.calib-btn,
+.policy-btn,
+.home-btn,
+.stop-btn {
+  width: auto;
+  min-width: 66px;
+  height: 58px;
+  padding: 0 18px;
+}
+
 /* StatusRail sits at the far right of the header. */
 .rail-slot {
   margin-left: auto;
@@ -428,7 +489,7 @@ onMounted(() => {
   display: flex;
   /* background: #424548; */
   border-radius: 10px;
-  padding: 0 4px;
+  padding: 0 8px;
   align-items: center;
   height: 58px;
   position: relative;
@@ -459,7 +520,7 @@ onMounted(() => {
   text-align: left;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 18px;
   letter-spacing: 0.5px;
 }
 .dropdown-item:hover { background: #19212b; color: #ffb020; }
@@ -506,7 +567,7 @@ onMounted(() => {
   border-radius: 5px;
   padding: 7px 12px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
+  font-size: 18px;
   letter-spacing: 0.4px;
   cursor: pointer;
   outline: none;
@@ -563,7 +624,7 @@ onMounted(() => {
   box-shadow: 0 0 12px rgba(255, 176, 32, 0.28) inset;
 }
 .mode-label {
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 800;
   color: #997040;
   letter-spacing: 1.5px;
@@ -599,7 +660,7 @@ onMounted(() => {
               0 0 0 1px rgba(105, 209, 128, 0.3) inset;
 }
 .teleop-label {
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 800;
   color: #69d180;
   letter-spacing: 1.5px;
@@ -643,7 +704,7 @@ onMounted(() => {
               0 0 0 1px rgba(176, 130, 255, 0.3) inset;
 }
 .calib-label {
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 800;
   color: #c2a3ff;
   letter-spacing: 1.5px;
@@ -678,7 +739,7 @@ onMounted(() => {
   box-shadow: 0 0 18px rgba(255, 179, 71, 0.55), 0 0 0 1px rgba(255, 179, 71, 0.3) inset;
 }
 .policy-label {
-  font-size: 12px; font-weight: 800; color: #ffd28a; letter-spacing: 1.5px;
+  font-size: 18px; font-weight: 800; color: #ffd28a; letter-spacing: 1.5px;
   text-shadow: 0 0 6px rgba(255, 179, 71, 0.5);
   transition: color 0.15s, text-shadow 0.15s;
 }
@@ -706,7 +767,7 @@ onMounted(() => {
   background: transparent;
 }
 .home-label {
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 800;
   color: #80d0e8;
   letter-spacing: 1.5px;
@@ -739,7 +800,7 @@ onMounted(() => {
   background: transparent;
 }
 .stop-label {
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 800;
   color: #ff4438;
   letter-spacing: 1.5px;
@@ -756,6 +817,6 @@ onMounted(() => {
 }
 
 .control-icon {
-  font-size: 16px;
+  font-size: 24px;
 }
 </style>

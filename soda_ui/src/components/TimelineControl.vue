@@ -172,7 +172,7 @@ const onSeek = (event) => {
 
 .time-display {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
+  font-size: 18px;
   color: #c6d3e0;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.8px;

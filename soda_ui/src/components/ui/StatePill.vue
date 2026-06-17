@@ -49,7 +49,7 @@ const stateClass = computed(() => `s-${upper.value.toLowerCase() || 'unknown'}`)
   background: #0a0d12;
   font-weight: 700;
   letter-spacing: 2px;
-  font-size: 12px;
+  font-size: 18px;
 }
 .label { line-height: 1; }
 

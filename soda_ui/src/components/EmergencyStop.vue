@@ -112,7 +112,7 @@ onUnmounted(() => { if (resetTimer) clearTimeout(resetTimer); });
 .estop-text {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-weight: 900;
-  font-size: 9px;
+  font-size: 13.5px;
   letter-spacing: 0.3px;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 6px rgba(255, 120, 100, 0.6);

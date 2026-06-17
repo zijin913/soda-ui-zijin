@@ -266,19 +266,19 @@ watch(() => conn.calibrationOpen, (o) => {
 }
 .cal-led.live { background: #69d180; box-shadow: 0 0 10px #69d180; animation: blink 1.2s infinite; }
 .cal-title { font-weight: 800; letter-spacing: 1.5px; color: #c2a3ff; text-shadow: 0 0 8px rgba(176,130,255,.6); }
-.cal-phase { margin-left: 8px; font-size: 11px; padding: 2px 8px; border-radius: 4px;
+.cal-phase { margin-left: 8px; font-size: 16.5px; padding: 2px 8px; border-radius: 4px;
   border: 1px solid #2a2040; color: #9a8cc0; letter-spacing: 1px; }
 .cal-phase.ph-done { color: #88e8a0; border-color: #2e5a38; }
 .cal-phase.ph-failed { color: #ff6a5a; border-color: #5a2420; }
 .cal-phase.ph-collecting, .cal-phase.ph-positioning, .cal-phase.ph-solving { color: #ffd27a; border-color: #5a4720; }
-.cal-stage-badge { font-size: 10.5px; font-weight: 800; letter-spacing: 1.5px; padding: 2px 8px;
+.cal-stage-badge { font-size: 15.8px; font-weight: 800; letter-spacing: 1.5px; padding: 2px 8px;
   border-radius: 4px; color: #e3d6ff; background: linear-gradient(180deg,#2c1850,#150a28);
   border: 1px solid #b082ff; box-shadow: 0 0 10px rgba(176,130,255,.35); }
-.cal-dismiss { margin-left: auto; padding: 4px 10px; font: inherit; font-size: 10.5px;
+.cal-dismiss { margin-left: auto; padding: 4px 10px; font: inherit; font-size: 15.8px;
   font-weight: 800; letter-spacing: 1.5px; color: #9a8cc0; background: #160d28;
   border: 1px solid #3a2c54; border-radius: 3px; cursor: pointer; transition: all .15s; }
 .cal-dismiss:hover { color: #c2a3ff; border-color: #b082ff; box-shadow: 0 0 10px rgba(176,130,255,.3); }
-.cal-x { background: none; border: none; color: #8a7fb0; cursor: pointer; font-size: 15px; }
+.cal-x { background: none; border: none; color: #8a7fb0; cursor: pointer; font-size: 22.5px; }
 .cal-x:hover { color: #ff6a5a; }
 
 /* targets */
@@ -296,7 +296,7 @@ watch(() => conn.calibrationOpen, (o) => {
 
 /* side notice */
 .cal-note {
-  margin: 8px 14px; padding: 8px 10px; font-size: 12px; line-height: 1.4;
+  margin: 8px 14px; padding: 8px 10px; font-size: 18px; line-height: 1.4;
   color: #ffd27a; background: rgba(60,44,12,.4); border: 1px solid #5a4720; border-radius: 5px;
 }
 
@@ -307,7 +307,7 @@ watch(() => conn.calibrationOpen, (o) => {
 .cal-feed-empty { align-items: center; justify-content: center; color: #5a4a7a; min-height: 220px; }
 .cal-badge {
   position: absolute; top: 10px; right: 10px; display: flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 1px;
+  padding: 4px 10px; border-radius: 4px; font-size: 16.5px; font-weight: 800; letter-spacing: 1px;
   background: rgba(10,10,14,.7); border: 1px solid #4a3a5a; color: #9a8cc0;
 }
 .cal-badge.on { color: #88e8a0; border-color: #2e5a38; box-shadow: 0 0 12px rgba(105,209,128,.4); }
@@ -320,7 +320,7 @@ watch(() => conn.calibrationOpen, (o) => {
   border-radius: 5px; overflow: hidden; }
 .cal-progress-fill { height: 100%; background: linear-gradient(90deg,#7a52d0,#b082ff);
   box-shadow: 0 0 10px rgba(176,130,255,.6); transition: width .3s; }
-.cal-progress-txt { font-size: 12px; color: #c2a3ff; white-space: nowrap; }
+.cal-progress-txt { font-size: 18px; color: #c2a3ff; white-space: nowrap; }
 
 .cal-solving { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   gap: 10px; font-weight: 800; letter-spacing: 2px; color: #ffd27a; background: rgba(6,8,11,.45); }
@@ -328,19 +328,19 @@ watch(() => conn.calibrationOpen, (o) => {
   border-radius: 50%; animation: spin .8s linear infinite; }
 
 /* message + result */
-.cal-msg { margin: 8px 14px; font-size: 12px; line-height: 1.4; color: #b9a8e0; }
+.cal-msg { margin: 8px 14px; font-size: 18px; line-height: 1.4; color: #b9a8e0; }
 .cal-msg.err { color: #ff8a7a; }
 .cal-result { margin: 8px 14px; padding: 10px; border: 1px solid #2a2040; border-radius: 6px;
   background: rgba(20,14,32,.5); }
-.cal-grade { font-weight: 800; letter-spacing: 2px; font-size: 15px; margin-bottom: 8px; }
+.cal-grade { font-weight: 800; letter-spacing: 2px; font-size: 22.5px; margin-bottom: 8px; }
 .g-excellent { color: #69d180; } .g-good { color: #9ad36a; }
 .g-acceptable { color: #ffd27a; } .g-poor { color: #ff6a5a; }
 .cal-metrics { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
-.cal-metrics li { display: flex; justify-content: space-between; font-size: 12px; }
+.cal-metrics li { display: flex; justify-content: space-between; font-size: 18px; }
 .mk { color: #9a8cc0; } .mv { color: #e3d6ff; font-weight: 700; }
 .cal-arm { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #2a2040; }
-.cal-arm-title { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; color: #c2a3ff; margin-bottom: 4px; }
-.cal-out { margin-top: 8px; font-size: 11px; color: #7a6ca0; word-break: break-all; }
+.cal-arm-title { font-size: 16.5px; font-weight: 800; letter-spacing: 1.5px; color: #c2a3ff; margin-bottom: 4px; }
+.cal-out { margin-top: 8px; font-size: 16.5px; color: #7a6ca0; word-break: break-all; }
 
 /* footer */
 .cal-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 14px 0; }

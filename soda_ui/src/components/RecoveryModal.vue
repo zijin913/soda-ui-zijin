@@ -357,11 +357,11 @@ function onDismiss() {
 .rm-led-active    { background: #ffb020; }
 .rm-led-finishing { background: #ff8c20; box-shadow: 0 0 18px #ff8c20, 0 0 3px #fff inset; }
 .rm-title {
-  font-weight: 900; font-size: 18px; letter-spacing: 4px;
+  font-weight: 900; font-size: 27px; letter-spacing: 4px;
   text-shadow: 0 0 8px rgba(255, 176, 32, 0.6);
 }
 .rm-subtitle {
-  margin-left: auto; font-size: 11px; letter-spacing: 2px; color: #c69a4a;
+  margin-left: auto; font-size: 16.5px; letter-spacing: 2px; color: #c69a4a;
 }
 
 /* ── body shared ── */
@@ -373,7 +373,7 @@ function onDismiss() {
   border: 1px solid rgba(255, 176, 32, 0.3);
   border-radius: 4px;
   padding: 16px 20px;
-  font-size: 13px;
+  font-size: 19.5px;
   font-family: inherit;
   min-height: 200px;
 }
@@ -388,7 +388,7 @@ function onDismiss() {
 }
 .rm-log-prompt { color: #5a4214; font-weight: 700; }
 .rm-log-text { font-weight: 700; }
-.rm-log-status { color: #c69a4a; font-size: 11px; letter-spacing: 1px; }
+.rm-log-status { color: #c69a4a; font-size: 16.5px; letter-spacing: 1px; }
 
 .rm-log-pending { color: #5a4214; opacity: 0.55; }
 .rm-log-pending .rm-log-prompt { color: #3a2810; }
@@ -408,7 +408,7 @@ function onDismiss() {
   margin-top: 16px;
   padding: 8px 12px;
   border-top: 1px dashed rgba(255, 176, 32, 0.2);
-  font-size: 10.5px;
+  font-size: 15.8px;
   letter-spacing: 2px;
   color: #c69a4a;
   text-align: center;
@@ -425,20 +425,20 @@ function onDismiss() {
   background: rgba(255, 176, 32, 0.04);
 }
 .rm-step-num {
-  font-size: 22px; font-weight: 900; letter-spacing: 2px;
+  font-size: 33px; font-weight: 900; letter-spacing: 2px;
   color: #ff8c20; min-width: 36px;
   text-shadow: 0 0 6px rgba(255, 140, 32, 0.5);
 }
 .rm-step-title {
-  font-size: 13.5px; font-weight: 700; color: #ffb020;
+  font-size: 20.2px; font-weight: 700; color: #ffb020;
   letter-spacing: 0.6px; margin-bottom: 4px;
 }
 .rm-step-title kbd {
   background: #06080b; border: 1px solid #5a4214; border-radius: 2px;
-  padding: 1px 6px; margin: 0 2px; font-size: 11px;
+  padding: 1px 6px; margin: 0 2px; font-size: 16.5px;
   color: #ff8c20; letter-spacing: 1.5px;
 }
-.rm-step-hint { font-size: 11px; color: #c69a4a; }
+.rm-step-hint { font-size: 16.5px; color: #c69a4a; }
 
 .rm-meter {
   display: flex; align-items: center; gap: 10px;
@@ -447,7 +447,7 @@ function onDismiss() {
   background: #06080b;
   border: 1px solid rgba(255, 176, 32, 0.3);
   border-radius: 3px;
-  font-size: 11px; letter-spacing: 1.5px;
+  font-size: 16.5px; letter-spacing: 1.5px;
 }
 .rm-meter-led {
   width: 8px; height: 8px; border-radius: 50%;
@@ -465,7 +465,7 @@ function onDismiss() {
   background: rgba(255, 64, 32, 0.1);
   border: 1px solid rgba(255, 64, 32, 0.5);
   border-radius: 3px;
-  color: #ff8c20; font-size: 11.5px;
+  color: #ff8c20; font-size: 17.2px;
 }
 
 /* ── footer ── */
@@ -482,14 +482,14 @@ function onDismiss() {
   background: #06080b;
   color: #ffb020;
   font-family: inherit;
-  font-weight: 800; letter-spacing: 2px; font-size: 12.5px;
+  font-weight: 800; letter-spacing: 2px; font-size: 18.8px;
   cursor: pointer; border-radius: 3px;
   transition: all 0.15s;
   text-transform: uppercase;
 }
 .rm-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .rm-btn:not(:disabled):hover { background: #1a1106; box-shadow: 0 0 14px rgba(255, 176, 32, 0.4); }
-.rm-cancel { flex: 0 0 30%; color: #c69a4a; font-size: 11px; }
+.rm-cancel { flex: 0 0 30%; color: #c69a4a; font-size: 16.5px; }
 .rm-confirm {
   border-color: #ff8c20;
   color: #ff8c20;

@@ -89,7 +89,7 @@ const subLabel = computed(() => {
   gap: 8px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 18px;
   letter-spacing: 1.8px;
   text-transform: uppercase;
   margin-bottom: 10px;
@@ -159,14 +159,14 @@ const subLabel = computed(() => {
 }
 .ns-main {
   color: #ff4438;
-  font-size: 14px;
+  font-size: 21px;
   font-weight: 800;
   letter-spacing: 3px;
   text-shadow: 0 0 8px rgba(255,68,56,0.5);
 }
 .ns-sub {
   color: #62717f;
-  font-size: 10px;
+  font-size: 15px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }

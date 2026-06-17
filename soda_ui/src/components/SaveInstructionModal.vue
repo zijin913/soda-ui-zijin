@@ -120,26 +120,26 @@ function chipPreview(t) {
 }
 @keyframes si-blink { 50% { opacity: 0.45; } }
 .si-title {
-  font-weight: 900; font-size: 14px; letter-spacing: 2.5px;
+  font-weight: 900; font-size: 21px; letter-spacing: 2.5px;
   text-shadow: 0 0 8px rgba(255, 176, 32, 0.55);
 }
 .si-hint {
   margin-left: auto;
-  font-size: 10px; letter-spacing: 0.7px;
+  font-size: 15px; letter-spacing: 0.7px;
   color: #997040; text-transform: none;
 }
 
 .si-body { padding: 16px 20px 12px; }
 .si-label {
   display: block;
-  font-size: 11px; letter-spacing: 1.5px; font-weight: 700;
+  font-size: 16.5px; letter-spacing: 1.5px; font-weight: 700;
   color: #c69a4a;
   margin-bottom: 8px;
 }
 .si-sublabel {
   font-weight: 400; letter-spacing: 0.3px; color: #886440;
   margin-left: 8px;
-  font-size: 10.5px;
+  font-size: 15.8px;
   text-transform: none;
 }
 
@@ -150,7 +150,7 @@ function chipPreview(t) {
   border-radius: 3px;
   color: #ffe0a0;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 19.5px;
   line-height: 1.5;
   padding: 10px 12px;
   outline: none;
@@ -171,7 +171,7 @@ function chipPreview(t) {
   align-items: center;
 }
 .si-recent-label {
-  font-size: 10px; letter-spacing: 1.5px; color: #886440;
+  font-size: 15px; letter-spacing: 1.5px; color: #886440;
   font-weight: 700;
   margin-right: 4px;
 }
@@ -182,7 +182,7 @@ function chipPreview(t) {
   border-radius: 12px;
   color: #c69a4a;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 16.5px;
   letter-spacing: 0.5px;
   cursor: pointer;
   transition: all 0.15s;
@@ -207,7 +207,7 @@ function chipPreview(t) {
   background: #06080b;
   color: #ffb020;
   font-family: inherit;
-  font-weight: 800; letter-spacing: 1.5px; font-size: 12px;
+  font-weight: 800; letter-spacing: 1.5px; font-size: 18px;
   cursor: pointer; border-radius: 3px;
   transition: all 0.15s;
 }
@@ -217,7 +217,7 @@ function chipPreview(t) {
 .si-btn-cancel { color: #c69a4a; border-color: #5a4214; }
 .si-btn-set    { color: #89e190; border-color: #69d180; }
 .si-btn-set:hover:not(:disabled) { box-shadow: 0 0 16px rgba(105, 209, 128, 0.5); background: #0a2a14; }
-.si-btn-glyph { font-size: 13px; }
+.si-btn-glyph { font-size: 19.5px; }
 
 .si-fade-enter-active, .si-fade-leave-active { transition: opacity 0.18s ease; }
 .si-fade-enter-from, .si-fade-leave-to { opacity: 0; }

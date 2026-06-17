@@ -142,7 +142,7 @@ onUnmounted(() => {
   border-bottom: 1px solid #19212b;
   cursor: pointer;
   user-select: none;
-  font-size: 11px;
+  font-size: 16.5px;
   letter-spacing: 1.2px;
 }
 .lp-collapsed .lp-head { border-bottom: none; }
@@ -171,7 +171,7 @@ onUnmounted(() => {
   padding: 2px 7px;
   border: 1px solid #2a3540;
   border-radius: 2px;
-  font-size: 10px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 1px;
   color: #62717f;
@@ -183,13 +183,13 @@ onUnmounted(() => {
 .lp-tag:hover { background: #0e1820; }
 
 .lp-count {
-  font-size: 10px;
+  font-size: 15px;
   color: #62717f;
   letter-spacing: 0.4px;
 }
 .lp-event {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 15px;
   color: #ffb020;
   letter-spacing: 0.4px;
   text-transform: none;
@@ -200,7 +200,7 @@ onUnmounted(() => {
 }
 .lp-toggle {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: 18px;
   color: #62717f;
   line-height: 1;
 }
@@ -212,7 +212,7 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 6px 0;
   background: #06080b;
-  font-size: 12px;
+  font-size: 18px;
   line-height: 1.45;
 }
 .lp-empty {
@@ -231,7 +231,7 @@ onUnmounted(() => {
 
 .lp-rtag {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.6px;
   padding-top: 2px;

@@ -28,7 +28,7 @@ const ledColor = computed(() => props.state === 'go' ? 'grn' : 'red');
   border-radius: 5px;
   font-weight: 700;
   letter-spacing: 1.5px;
-  font-size: 13px;
+  font-size: 19.5px;
   font-variant-numeric: tabular-nums;
 }
 .go {

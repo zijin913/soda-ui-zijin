@@ -42,15 +42,15 @@ const phaseLabel = computed(() => ({
   border-radius: 6px;
   box-shadow: 0 0 24px rgba(255, 179, 71, 0.3), 0 1px 0 rgba(255, 255, 255, 0.02) inset;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px; color: #ffd28a; cursor: pointer; text-align: left;
+  font-size: 18px; color: #ffd28a; cursor: pointer; text-align: left;
   transition: box-shadow 0.18s ease, transform 0.18s ease;
 }
 .hpb-banner:hover { box-shadow: 0 0 36px rgba(255, 179, 71, 0.55); transform: translateY(-1px); }
 .hpb-led { width: 14px; height: 14px; border-radius: 50%; background: #5a4214; box-shadow: 0 0 10px rgba(255,179,71,.4); flex-shrink: 0; }
 .hpb-led.active { background: #ffb347; box-shadow: 0 0 12px #ffb347, 0 0 2px #fff inset; animation: hpb-blink 1.0s steps(2, end) infinite; }
 .hpb-label { font-weight: 800; letter-spacing: 2px; }
-.hpb-status { font-size: 11px; letter-spacing: 1px; color: #c69a4a; padding: 2px 8px; border: 1px solid #3a2c14; border-radius: 2px; background: #06080b; }
-.hpb-hint { margin-left: auto; font-size: 10.5px; color: #b88a3a; letter-spacing: 0.4px; }
+.hpb-status { font-size: 16.5px; letter-spacing: 1px; color: #c69a4a; padding: 2px 8px; border: 1px solid #3a2c14; border-radius: 2px; background: #06080b; }
+.hpb-hint { margin-left: auto; font-size: 15.8px; color: #b88a3a; letter-spacing: 0.4px; }
 
 @keyframes hpb-blink { 50% { opacity: 0.4; } }
 .hpb-slide-enter-active, .hpb-slide-leave-active { transition: all 0.22s ease; }

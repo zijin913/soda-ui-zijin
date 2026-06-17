@@ -758,8 +758,11 @@ body {
 }
 
 .app-root {
-  width: 100vw;
-  height: 100vh;
+  /* Counter the global `html { zoom }` so the dashboard still fills the screen.
+     Sized at 1 / zoom (0.8 -> 125vw/125vh) because viewport units are NOT
+     rescaled by CSS zoom. Keep these two in sync with the zoom in main.css. */
+  width: 125vw;
+  height: 125vh;
   background-color: #06080b;
   /* Pi's 34px hairline grid + faint vignette wash. */
   background-image:

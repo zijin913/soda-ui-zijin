@@ -180,7 +180,7 @@ onUnmounted(() => { conn.stopLogTail(); });
   box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset,
               0 22px 60px rgba(0,0,0,0.7);
   padding: 30px 36px;
-  font-size: 15px;
+  font-size: 22.5px;
   line-height: 1.55;
   color: #c6d3e0;
   background-image:
@@ -199,20 +199,20 @@ onUnmounted(() => { conn.stopLogTail(); });
   margin-bottom: 14px;
 }
 .hdr-title {
-  font-size: 17px;
+  font-size: 25.5px;
   font-weight: 700;
   letter-spacing: 3px;
 }
 .hdr-pill { margin-left: auto; }
 
-.instructions { font-size: 12.5px; }
+.instructions { font-size: 18.8px; }
 .instr-line   { margin: 6px 0; }
 .instr-cmd {
   background: #06080b;
   border: 1px solid #19212b;
   border-radius: 4px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 18px;
   color: #ffb020;
   margin: 8px 0;
   white-space: pre;
@@ -221,7 +221,7 @@ onUnmounted(() => { conn.stopLogTail(); });
 .mode-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .mode-btn {
   font: inherit;
-  font-size: 14px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: 1.4px;
   padding: 10px 24px;
@@ -242,7 +242,7 @@ onUnmounted(() => { conn.stopLogTail(); });
 .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .current-mode {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 16.5px;
   color: #62717f;
 }
 .current-mode b { color: #c6d3e0; }
@@ -251,7 +251,7 @@ onUnmounted(() => { conn.stopLogTail(); });
 .btn-launch, .btn-stop {
   flex: 1;
   font: inherit;
-  font-size: 18px;
+  font-size: 27px;
   font-weight: 700;
   letter-spacing: 2.2px;
   padding: 22px 18px;
@@ -294,24 +294,24 @@ onUnmounted(() => { conn.stopLogTail(); });
 }
 .stat-cell {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px;
+  font-size: 16.5px;
 }
 .stat-cell .k {
-  font-size: 10px; color: #62717f;
+  font-size: 15px; color: #62717f;
   text-transform: uppercase; letter-spacing: 1.2px;
 }
 .stat-cell .v { color: #c6d3e0; font-variant-numeric: tabular-nums; }
 
 .pid-row {
   display: flex; gap: 14px;
-  font-size: 11px; color: #62717f;
+  font-size: 16.5px; color: #62717f;
   margin-bottom: 8px;
   flex-wrap: wrap;
 }
 .pid-row b { color: #c6d3e0; font-variant-numeric: tabular-nums; }
 
 .error-line {
-  font-size: 11.5px; color: #ff4438;
+  font-size: 17.2px; color: #ff4438;
   background: #2a0a09; border-left: 2px solid #ff4438;
   padding: 6px 8px; margin: 4px 0;
   border-radius: 2px;
@@ -320,7 +320,7 @@ onUnmounted(() => { conn.stopLogTail(); });
 .log-tail { margin-top: 10px; border-top: 1px solid #19212b; padding-top: 10px; }
 .log-hdr {
   display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 10px; text-transform: uppercase; letter-spacing: 1.4px;
+  font-size: 15px; text-transform: uppercase; letter-spacing: 1.4px;
   color: #62717f;
   margin-bottom: 4px;
 }
@@ -330,7 +330,7 @@ onUnmounted(() => { conn.stopLogTail(); });
   border: 1px solid #19212b;
   border-radius: 4px;
   padding: 10px 12px; margin: 0;
-  font-size: 12.5px;
+  font-size: 18.8px;
   color: #62717f;
   max-height: 220px;
   overflow-y: auto;

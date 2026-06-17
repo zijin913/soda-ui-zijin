@@ -369,7 +369,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
 }
 .to-led-rec { background: #ff3030; box-shadow: 0 0 16px #ff3030, 0 0 3px #fff inset; animation: to-blink 0.55s steps(2, end) infinite; }
 .to-title {
-  font-weight: 900; font-size: 16px; letter-spacing: 3px;
+  font-weight: 900; font-size: 24px; letter-spacing: 3px;
   text-shadow: 0 0 8px rgba(255, 176, 32, 0.6);
 }
 .to-statpill {
@@ -377,7 +377,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   padding: 5px 12px;
   border: 1px solid #5a4214;
   border-radius: 2px;
-  font-size: 11px; letter-spacing: 2px; font-weight: 700;
+  font-size: 16.5px; letter-spacing: 2px; font-weight: 700;
   background: #06080b;
   color: #ffb020;
 }
@@ -408,7 +408,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   border-radius: 3px;
   color: #c69a4a;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 17.2px;
   letter-spacing: 0.8px;
   cursor: pointer;
   transition: all 0.15s;
@@ -426,9 +426,9 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   color: #ffd060;
   animation: to-blink 1.4s steps(2, end) infinite;
 }
-.tp-glyph { font-size: 12px; color: #ffb020; flex-shrink: 0; }
+.tp-glyph { font-size: 18px; color: #ffb020; flex-shrink: 0; }
 .tp-key {
-  font-size: 10px; font-weight: 800;
+  font-size: 15px; font-weight: 800;
   letter-spacing: 1.6px;
   color: #997040;
   flex-shrink: 0;
@@ -440,7 +440,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tp-edit {
-  font-size: 12px;
+  font-size: 18px;
   opacity: 0.65;
   flex-shrink: 0;
 }
@@ -466,7 +466,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   padding: 6px 10px;
   background: linear-gradient(90deg, #1a1106, #06080b);
   border-bottom: 1px solid rgba(255, 176, 32, 0.2);
-  font-size: 10.5px; letter-spacing: 2px; color: #c69a4a;
+  font-size: 15.8px; letter-spacing: 2px; color: #c69a4a;
 }
 .to-cam-led {
   width: 7px; height: 7px; border-radius: 50%;
@@ -485,7 +485,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   width: 100%; height: 100%; object-fit: contain;
 }
 .to-cam-empty {
-  font-size: 11px; letter-spacing: 1.5px; color: #5a4214; font-style: italic;
+  font-size: 16.5px; letter-spacing: 1.5px; color: #5a4214; font-style: italic;
 }
 
 /* ── action buttons ── */
@@ -501,7 +501,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   background: #06080b;
   color: #ffb020;
   font-family: inherit;
-  font-weight: 800; letter-spacing: 1.5px; font-size: 12px;
+  font-weight: 800; letter-spacing: 1.5px; font-size: 18px;
   cursor: pointer; border-radius: 3px;
   transition: all 0.15s;
 }
@@ -509,7 +509,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
 .to-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .to-btn-key {
   background: #1a1106; padding: 2px 7px; border-radius: 2px;
-  font-size: 11px; color: #ffd060; border: 1px solid #5a4214;
+  font-size: 16.5px; color: #ffd060; border: 1px solid #5a4214;
   letter-spacing: 1.5px;
 }
 .to-btn-rec  { border-color: #ff5050; color: #ff8080; }
@@ -533,7 +533,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   animation: to-pulse 1.4s ease-in-out infinite;
 }
 .to-prompt-label {
-  font-size: 13px; font-weight: 800; letter-spacing: 1.5px;
+  font-size: 19.5px; font-weight: 800; letter-spacing: 1.5px;
   color: #ffd060; text-shadow: 0 0 6px rgba(255, 208, 96, 0.6);
 }
 .to-prompt-btn {
@@ -542,7 +542,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   border: 1px solid #5a4214;
   background: #06080b;
   color: #ffd060;
-  font-family: inherit; font-weight: 800; letter-spacing: 1.5px; font-size: 11.5px;
+  font-family: inherit; font-weight: 800; letter-spacing: 1.5px; font-size: 17.2px;
   border-radius: 3px; cursor: pointer; transition: all 0.15s;
 }
 .to-prompt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -559,7 +559,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
 }
 .to-meter {
   display: flex; align-items: center; gap: 8px;
-  font-size: 11px; letter-spacing: 1.5px;
+  font-size: 16.5px; letter-spacing: 1.5px;
   color: #c69a4a;
   flex: 1;
   flex-wrap: wrap;
@@ -577,7 +577,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   padding: 8px 14px;
   border: 1px solid #5a4214; background: #06080b;
   color: #c69a4a;
-  font-family: inherit; font-weight: 800; letter-spacing: 1.5px; font-size: 10.5px;
+  font-family: inherit; font-weight: 800; letter-spacing: 1.5px; font-size: 15.8px;
   cursor: pointer; border-radius: 3px;
   transition: all 0.15s;
 }
@@ -589,7 +589,7 @@ onUnmounted(() => window.removeEventListener('keydown', onWindowKey));
   background: rgba(255, 64, 32, 0.12);
   border: 1px solid rgba(255, 64, 32, 0.5);
   border-radius: 3px;
-  color: #ff8c20; font-size: 11px;
+  color: #ff8c20; font-size: 16.5px;
 }
 
 /* ── animations ── */

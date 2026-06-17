@@ -27,11 +27,11 @@ const toneClass = computed(() => props.tone ? `tone-${props.tone}` : '');
   border: 1px solid #19212b;
   border-radius: 4px;
   background: #0a0d12;
-  font-size: 11px;
+  font-size: 16.5px;
   line-height: 1;
 }
 .k {
-  font-size: 10px;
+  font-size: 15px;
   letter-spacing: 1.2px;
   color: #62717f;
   text-transform: uppercase;

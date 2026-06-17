@@ -40,7 +40,7 @@ function reopen() { conn.teleopOverlayDismissed = false; }
   box-shadow: 0 0 24px rgba(255, 176, 32, 0.3),
               0 1px 0 rgba(255, 255, 255, 0.02) inset;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
+  font-size: 18px;
   color: #ffb020;
   cursor: pointer;
   text-align: left;
@@ -64,12 +64,12 @@ function reopen() { conn.teleopOverlayDismissed = false; }
 }
 .tb-label { font-weight: 800; letter-spacing: 2px; }
 .tb-status {
-  font-size: 11px; letter-spacing: 1px; color: #c69a4a;
+  font-size: 16.5px; letter-spacing: 1px; color: #c69a4a;
   padding: 2px 8px; border: 1px solid #5a4214; border-radius: 2px;
   background: #06080b;
 }
 .tb-hint {
-  margin-left: auto; font-size: 10.5px; color: #c69a4a; letter-spacing: 0.4px;
+  margin-left: auto; font-size: 15.8px; color: #c69a4a; letter-spacing: 0.4px;
 }
 
 @keyframes tb-blink { 50% { opacity: 0.4; } }

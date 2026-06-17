@@ -47,7 +47,7 @@ const phaseLabel = computed(() => ({
   box-shadow: 0 0 24px rgba(176, 130, 255, 0.3),
               0 1px 0 rgba(255, 255, 255, 0.02) inset;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
+  font-size: 18px;
   color: #c2a3ff;
   cursor: pointer;
   text-align: left;
@@ -68,11 +68,11 @@ const phaseLabel = computed(() => ({
 }
 .cb-label { font-weight: 800; letter-spacing: 2px; }
 .cb-status {
-  font-size: 11px; letter-spacing: 1px; color: #9a8cc0;
+  font-size: 16.5px; letter-spacing: 1px; color: #9a8cc0;
   padding: 2px 8px; border: 1px solid #3a2c54; border-radius: 2px;
   background: #06080b;
 }
-.cb-hint { margin-left: auto; font-size: 10.5px; color: #9a8cc0; letter-spacing: 0.4px; }
+.cb-hint { margin-left: auto; font-size: 15.8px; color: #9a8cc0; letter-spacing: 0.4px; }
 
 @keyframes cb-blink { 50% { opacity: 0.4; } }
 .cb-slide-enter-active, .cb-slide-leave-active { transition: all 0.22s ease; }

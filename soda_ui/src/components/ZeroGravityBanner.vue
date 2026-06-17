@@ -43,7 +43,7 @@ const onClick = () => {
   box-shadow: 0 0 24px rgba(255,176,32,0.35),
               0 1px 0 rgba(255,255,255,0.02) inset;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
+  font-size: 18px;
   color: #ffb020;
   animation: zg-pulse 1.8s ease-in-out infinite;
   cursor: pointer;
@@ -69,7 +69,7 @@ const onClick = () => {
 }
 .zg-hint {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 15.8px;
   color: #c69a4a;
   letter-spacing: 0.4px;
 }
@@ -79,7 +79,7 @@ const onClick = () => {
   border-radius: 2px;
   padding: 1px 5px;
   margin: 0 1px;
-  font-size: 10px;
+  font-size: 15px;
   color: #ffb020;
 }
 @keyframes zg-pulse {

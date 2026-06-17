@@ -105,12 +105,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 .sc-title {
   font-weight: 800;
   letter-spacing: 2px;
-  font-size: 13px;
+  font-size: 19.5px;
 }
 
 .sc-body {
   padding: 18px;
-  font-size: 12.5px;
+  font-size: 18.8px;
   line-height: 1.6;
 }
 .sc-line { margin: 0 0 12px; color: #d9b66a; }
@@ -120,12 +120,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   margin: 0 0 12px;
   padding-left: 18px;
   color: #c69a4a;
-  font-size: 11.5px;
+  font-size: 17.2px;
 }
 .sc-steps li { margin: 3px 0; }
 .sc-note {
   margin: 12px 0 0;
-  font-size: 11px;
+  font-size: 16.5px;
   color: #c69a4a;
 }
 .sc-note kbd {
@@ -134,7 +134,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   border-radius: 2px;
   padding: 1px 5px;
   margin: 0 2px;
-  font-size: 10px;
+  font-size: 15px;
   color: #ffb020;
 }
 
@@ -154,7 +154,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   font-family: inherit;
   font-weight: 700;
   letter-spacing: 1.5px;
-  font-size: 11.5px;
+  font-size: 17.2px;
   cursor: pointer;
   border-radius: 3px;
   transition: all 0.15s;

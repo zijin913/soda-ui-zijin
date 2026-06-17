@@ -106,7 +106,7 @@ function anyRed(bars) {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 10px;
+  font-size: 15px;
   letter-spacing: 1.6px;
   color: #62717f;
   text-transform: uppercase;
@@ -133,7 +133,7 @@ function anyRed(bars) {
   padding: 0 8px;
 }
 .empty-msg {
-  font-size: 10px;
+  font-size: 15px;
   color: #62717f;
   letter-spacing: 1px;
 }

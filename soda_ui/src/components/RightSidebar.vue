@@ -316,7 +316,7 @@ const generatePath = (jointIndex, side = 'left') => {
   align-items: center;
   gap: 8px;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 18px;
   letter-spacing: 1.8px;
   text-transform: uppercase;
   color: #c6d3e0;
@@ -429,7 +429,7 @@ const generatePath = (jointIndex, side = 'left') => {
   text-align: center;
   padding: 6px 0;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
+  font-size: 16.5px;
   font-weight: 700;
   letter-spacing: 1.2px;
   text-transform: uppercase;
@@ -449,7 +449,7 @@ const generatePath = (jointIndex, side = 'left') => {
 .legend {
   display: flex;
   gap: 16px;
-  font-size: 10px;
+  font-size: 15px;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: #62717f;
@@ -467,7 +467,7 @@ const generatePath = (jointIndex, side = 'left') => {
 .legend .dot-right { background: #ffb020; box-shadow: 0 0 4px #ffb020; }
 
 .side-tag {
-  font-size: 10px;
+  font-size: 15px;
   font-weight: 700;
   width: 16px;
   text-align: center;
@@ -496,13 +496,13 @@ const generatePath = (jointIndex, side = 'left') => {
 .chart-row { flex: 1; min-height: 60px; display: flex; flex-direction: column; }
 .chart-header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; flex: 0 0 auto; }
 .chart-label {
-  font-size: 10px;
+  font-size: 15px;
   color: #62717f;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
 .current-value {
-  font-size: 11px;
+  font-size: 16.5px;
   color: #36e08a;
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -511,7 +511,7 @@ const generatePath = (jointIndex, side = 'left') => {
 .chart-visual { flex: 1; min-height: 0; position: relative; display: flex; align-items: stretch; }
 .y-axis {
   display: flex; flex-direction: column; justify-content: space-between;
-  height: 100%; font-size: 9px; color: #3b4654;
+  height: 100%; font-size: 13.5px; color: #3b4654;
   margin-right: 8px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }

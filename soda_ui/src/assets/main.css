@@ -1,6 +1,13 @@
 @import './base.css';
 @import './phosphor.css';
 
+/* Global UI scale. Behaves like browser zoom: renders the whole dashboard at
+   80% so it matches the look the user dialed in at browser-zoom 80%. Kept in
+   sync with `.app-root { width/height: 125vw/vh }` in App.vue (1 / zoom). */
+html {
+  zoom: 0.8;
+}
+
 #app {
   max-width: 100%;
   margin: 0 auto;
