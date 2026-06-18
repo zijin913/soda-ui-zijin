@@ -33,6 +33,8 @@ const rewriteHost = (url) => {
 const props = defineProps({
   pointCloudData: { default: null },
   showPointCloud: { type: Boolean, default: true },
+  // Toggles a world/base coordinate frame (labeled X/Y/Z axes at the origin).
+  showCoordinate: { type: Boolean, default: false },
   mode: { type: String, default: 'realtime' },
   dualMode: { type: Boolean, default: false }
 });
@@ -707,6 +709,30 @@ const clearHelpers = () => {
     window.lastHelperParent = null;
   }
 };
+
+// World / base coordinate frame, toggled by the VIEW "coordinate" button.
+// A larger labeled XYZ axes parked at the scene origin (the robot base sits at
+// the origin, Z-up), so the user can read the coordinate system orientation.
+let worldAxes = null;
+const ensureWorldAxes = () => {
+  if (worldAxes || !scene) return;
+  const axisLength = 0.3;
+  worldAxes = new THREE.AxesHelper(axisLength);
+  worldAxes.material.depthTest = false;
+  worldAxes.renderOrder = 999;
+  worldAxes.traverse(c => { if (c.isLine) c.material.depthTest = false; });
+  const labelOffset = axisLength + 0.04;
+  const lx = createLabelSprite('X', '#ff3333'); lx.position.set(labelOffset, 0, 0); worldAxes.add(lx);
+  const ly = createLabelSprite('Y', '#33ff33'); ly.position.set(0, labelOffset, 0); worldAxes.add(ly);
+  const lz = createLabelSprite('Z', '#3333ff'); lz.position.set(0, 0, labelOffset); worldAxes.add(lz);
+  disableRaycast(worldAxes);
+  scene.add(worldAxes);
+};
+const setWorldAxesVisible = (visible) => {
+  if (visible) ensureWorldAxes();
+  if (worldAxes) worldAxes.visible = visible;
+};
+watch(() => props.showCoordinate, setWorldAxesVisible);
 
 const addJointDirectionHelper = (linkObject, joint) => {
   const type = joint.jointType;

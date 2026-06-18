@@ -10,8 +10,22 @@
       <div class="panel-header">
         <CameraIcon />
         <span>{{ label }}</span>
-        <!-- Live LED — green when streaming, red dim when not. -->
-        <span class="live-dot" :class="imageUrl ? 'on' : 'off'"></span>
+        <span class="panel-header-right">
+          <!-- Single calibration entry point, embedded in the first camera's
+               header. Opens the modal where the target (left/right/side) is
+               picked. Realtime-only; disabled while teleop holds the cameras. -->
+          <button v-if="showCalibrate" class="cal-chip" :class="{ active: conn.calibActive }"
+                  :disabled="conn.backend !== 'up' || conn.teleopRunning || conn.teachActive"
+                  @click="conn.openCalibration"
+                  :title="conn.backend !== 'up' ? 'Backend offline'
+                          : conn.teachActive ? 'Exit programming mode first'
+                          : conn.teleopRunning ? 'Stop teleop first'
+                          : 'Calibrate a camera (left / right / side)'">
+            CALIBRATE
+          </button>
+          <!-- Live LED — green when streaming, red dim when not. -->
+          <span class="live-dot" :class="imageUrl ? 'on' : 'off'"></span>
+        </span>
       </div>
 
       <div class="camera-feed" :class="{ phosphor: !imageUrl }">
@@ -40,7 +54,10 @@ const props = defineProps({
   //   'top'    = row 0 (1rem)
   //   'bottom' = row 1 (290px)
   //   'lower'  = row 2 (580px)
-  position: { type: String, default: 'top' }
+  position: { type: String, default: 'top' },
+  // When true, show a CALIBRATE button in this panel's header (used only on
+  // the first camera). Opens the modal where the target camera is chosen.
+  showCalibrate: { type: Boolean, default: false },
 });
 
 const conn = useConnectionStore();
@@ -117,10 +134,43 @@ const subLabel = computed(() => {
   display: block;
 }
 
-/* Header live indicator — sits to the right of the camera label. */
+/* Right-aligned header cluster: CALIBRATE button (first cam only) + live LED. */
+.panel-header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Embedded calibrate button — violet phosphor, matching the calibration modal. */
+.cal-chip {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(176, 130, 255, 0.5);
+  background: rgba(26, 14, 40, 0.45);
+  color: #b082ff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cal-chip:hover:not(:disabled) {
+  border-color: rgba(176, 130, 255, 0.95);
+  box-shadow: 0 0 10px rgba(176, 130, 255, 0.5);
+  background: rgba(36, 20, 56, 0.85);
+}
+.cal-chip:disabled { opacity: 0.32; cursor: not-allowed; }
+.cal-chip.active {
+  background: linear-gradient(180deg, #2c1850, #150a28);
+  border-color: #b082ff;
+  box-shadow: 0 0 12px rgba(176, 130, 255, 0.5);
+}
+
+/* Header live indicator — sits at the far right of the header. */
 .live-dot {
   width: 8px; height: 8px; border-radius: 50%;
-  margin-left: auto;
   background: #3b4654;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset;
 }

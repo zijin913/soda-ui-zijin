@@ -129,6 +129,65 @@ export const useConnectionStore = defineStore('connection', () => {
   function openStopConfirm() { stopConfirmOpen.value = true }
   function closeStopConfirm() { stopConfirmOpen.value = false }
 
+  // ── teach / programming mode ──────────────────────────────────────
+  // PROGRAMMING floats both arms (in-process gravity-comp freedrive, no zero-g
+  // launcher); EXECUTION holds pose and resumes normal control.
+  const teachActive = ref<boolean>(false)
+  const teachConfirmOpen = ref<boolean>(false)
+
+  async function pollTeachOnce(): Promise<void> {
+    if (backend.value !== 'up') { teachActive.value = false; return }
+    try {
+      const r = await fetch(`${backendUrl.value}/api/teach/status`, { cache: 'no-store' })
+      if (!r.ok) return
+      const s = await r.json()
+      teachActive.value = !!s.teach_active
+    } catch { /* ignore */ }
+  }
+
+  // Click PROGRAMMING: confirm first on real hardware (arms go compliant and
+  // may sag); float immediately in sim.
+  function requestTeach(): void {
+    if (mode.value === 'real') teachConfirmOpen.value = true
+    else void enterTeach()
+  }
+  function cancelTeach(): void { teachConfirmOpen.value = false }
+  async function confirmTeach(): Promise<void> {
+    teachConfirmOpen.value = false
+    await enterTeach()
+  }
+
+  async function enterTeach(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}/api/teach/enter`, { method: 'POST' })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        lastError.value = data?.error || `Enter teach failed (HTTP ${r.status})`
+        return { ok: false, error: lastError.value }
+      }
+      teachActive.value = true
+      return { ok: true }
+    } catch (e: any) {
+      lastError.value = `Enter teach failed: ${String(e?.message || e)}`
+      return { ok: false, error: lastError.value }
+    }
+  }
+  async function exitTeach(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await fetch(`${backendUrl.value}/api/teach/exit`, { method: 'POST' })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        lastError.value = data?.error || `Exit teach failed (HTTP ${r.status})`
+        return { ok: false, error: lastError.value }
+      }
+      teachActive.value = false
+      return { ok: true }
+    } catch (e: any) {
+      lastError.value = `Exit teach failed: ${String(e?.message || e)}`
+      return { ok: false, error: lastError.value }
+    }
+  }
+
   const launcherUrl = computed(defaultLauncherUrl)
   const backendUrl = computed(defaultBackendUrl)
   const wsUrl = computed(defaultWsUrl)
@@ -176,8 +235,8 @@ export const useConnectionStore = defineStore('connection', () => {
       metricsTimer = window.setInterval(pollMetricsOnce, 3000)
     }
     if (teleopTimer === null) {
-      void pollTeleopOnce()
-      teleopTimer = window.setInterval(pollTeleopOnce, 2000)
+      void pollTeleopOnce(); void pollTeachOnce()
+      teleopTimer = window.setInterval(() => { void pollTeleopOnce(); void pollTeachOnce() }, 2000)
     }
   }
 
@@ -698,6 +757,12 @@ export const useConnectionStore = defineStore('connection', () => {
   // ── log tail (used by LauncherCard while open) ─────────────────────
   const hwLogs = ref<string[]>([])
   const backendLogs = ref<string[]>([])
+  // Per-feature streams (teleop / policy / calib), served by the backend's
+  // /api/logs/feature. Only polled while the backend is up; the LogPanel shows
+  // a tagged tab per feature, visible only while that feature is active.
+  const featureLogs = ref<{ teleop: string[]; policy: string[]; calib: string[] }>(
+    { teleop: [], policy: [], calib: [] },
+  )
 
   async function fetchLogs(stream: 'hw' | 'backend', n = 50): Promise<void> {
     try {
@@ -714,13 +779,34 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
+  async function fetchFeatureLogs(n = 200): Promise<void> {
+    if (backend.value !== 'up') return
+    try {
+      const r = await fetch(
+        `${backendUrl.value}/api/logs/feature?n=${n}`,
+        { cache: 'no-store' },
+      )
+      if (!r.ok) return
+      const body = await r.json()
+      featureLogs.value = {
+        teleop: body.teleop ?? [],
+        policy: body.policy ?? [],
+        calib: body.calib ?? [],
+      }
+    } catch {
+      /* backend may be down — ignore */
+    }
+  }
+
   function startLogTail(intervalMs = 2000): void {
     if (logTimer !== null) return
     void fetchLogs('hw')
     void fetchLogs('backend')
+    void fetchFeatureLogs()
     logTimer = window.setInterval(() => {
       void fetchLogs('hw')
       void fetchLogs('backend')
+      void fetchFeatureLogs()
     }, intervalMs)
   }
 
@@ -767,7 +853,8 @@ export const useConnectionStore = defineStore('connection', () => {
     homing,
     recoveryModalDismissed, recoveryStarting, recoveryFinishing,
     stopConfirmOpen,
-    hwLogs, backendLogs,
+    teachActive, teachConfirmOpen,
+    hwLogs, backendLogs, featureLogs,
     // urls
     launcherUrl, backendUrl, wsUrl,
     isOperational,
@@ -776,6 +863,7 @@ export const useConnectionStore = defineStore('connection', () => {
     launch, stop, finishRecovery, estop,
     openStopConfirm, closeStopConfirm,
     confirmStop,
+    requestTeach, cancelTeach, confirmTeach, enterTeach, exitTeach, pollTeachOnce,
     beginRecoveryStarting, endRecoveryStarting,
     sendTeleopKey, sendTeleopInstruction, stopTeleop, goHome, openTeleopWs, closeTeleopWs,
     openCalibration, closeCalibration, dismissCalibration, reopenCalibration,
@@ -784,7 +872,7 @@ export const useConnectionStore = defineStore('connection', () => {
     openHostPolicy, closeHostPolicy, dismissHostPolicy, reopenHostPolicy,
     fetchPolicyList, pollPolicyOnce, startPolicyPolling, stopPolicyPolling,
     startPolicy, stopPolicy, updatePolicyParams, savePolicy, deletePolicy, openPolicyWs, closePolicyWs,
-    startLogTail, stopLogTail, fetchLogs,
+    startLogTail, stopLogTail, fetchLogs, fetchFeatureLogs,
     tickWsFrame, setWsConnected, setWsLatency,
   }
 })

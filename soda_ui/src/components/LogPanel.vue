@@ -9,6 +9,15 @@
       <span class="lp-tag lp-tag-hw" :class="{ on: showHw }"
             @click.stop="showHw = !showHw"
             title="Toggle hardware stream">HW</span>
+      <span v-if="hasTele" class="lp-tag lp-tag-tele" :class="{ on: showTele }"
+            @click.stop="showTele = !showTele"
+            title="Toggle teleop stream">TELE</span>
+      <span v-if="hasCalib" class="lp-tag lp-tag-calib" :class="{ on: showCal }"
+            @click.stop="showCal = !showCal"
+            title="Toggle calibration stream">CAL</span>
+      <span v-if="hasPolicy" class="lp-tag lp-tag-policy" :class="{ on: showPol }"
+            @click.stop="showPol = !showPol"
+            title="Toggle policy stream">POL</span>
       <span class="lp-count">{{ mergedLines.length }} lines</span>
       <span v-if="conn.lastEvent" class="lp-event">{{ conn.lastEvent }}</span>
       <span class="lp-toggle">{{ collapsed ? '▴' : '▾' }}</span>
@@ -33,8 +42,23 @@ const conn = useConnectionStore();
 const collapsed = ref(false);
 const showBe = ref(true);
 const showHw = ref(true);
+// Per-feature streams — toggles default on; the tags only render while the
+// feature is active or has produced output (see hasTele/hasCalib/hasPolicy).
+const showTele = ref(true);
+const showCal = ref(true);
+const showPol = ref(true);
 const bodyRef = ref(null);
 let stickToBottom = true;
+
+const hasTele = computed(
+  () => conn.teleopRunning || conn.featureLogs.teleop.length > 0,
+);
+const hasCalib = computed(
+  () => conn.calibActive || conn.featureLogs.calib.length > 0,
+);
+const hasPolicy = computed(
+  () => conn.policyActive || conn.featureLogs.policy.length > 0,
+);
 
 function toggleCollapsed() { collapsed.value = !collapsed.value; }
 
@@ -66,20 +90,30 @@ function extractTs(text) {
 
 const mergedLines = computed(() => {
   const out = [];
-  if (showBe.value) {
-    for (const l of conn.backendLogs) {
-      out.push({ stream: 'BE', text: l, kind: classifyLine(l), ts: extractTs(l) });
+  const pushStream = (on, lines, tag) => {
+    if (!on) return;
+    for (const l of lines) {
+      out.push({ stream: tag, text: l, kind: classifyLine(l), ts: extractTs(l) });
     }
-  }
-  if (showHw.value) {
-    for (const l of conn.hwLogs) {
-      out.push({ stream: 'HW', text: l, kind: classifyLine(l), ts: extractTs(l) });
-    }
-  }
+  };
+  pushStream(showBe.value, conn.backendLogs, 'BE');
+  pushStream(showHw.value, conn.hwLogs, 'HW');
+  pushStream(showTele.value, conn.featureLogs.teleop, 'TELE');
+  pushStream(showCal.value, conn.featureLogs.calib, 'CAL');
+  pushStream(showPol.value, conn.featureLogs.policy, 'POL');
   // Stable sort by [HH:MM:SS]. Lines without a timestamp sort to top (rare).
   out.sort((a, b) => a.ts.localeCompare(b.ts));
   return out.slice(-200);
 });
+
+// Pop the panel open the moment a feature starts, so its log is visible
+// without the user having to expand it manually.
+watch(
+  () => [conn.teleopRunning, conn.calibActive, conn.policyActive],
+  (now, prev) => {
+    if (now.some((v, i) => v && !prev?.[i])) collapsed.value = false;
+  },
+);
 
 // Recent-error indicator: the head LED blinks red if any error line in the
 // last ~30 rows. Lets the user spot trouble even while collapsed.
@@ -180,6 +214,9 @@ onUnmounted(() => {
 .lp-tag.on { color: #ffb020; border-color: rgba(255, 176, 32, 0.5); }
 .lp-tag-be.on { color: #60c0d0; border-color: rgba(96, 192, 208, 0.55); }
 .lp-tag-hw.on { color: #d060a0; border-color: rgba(208, 96, 160, 0.55); }
+.lp-tag-tele.on   { color: #69d180; border-color: rgba(105, 209, 128, 0.55); }
+.lp-tag-calib.on  { color: #b082ff; border-color: rgba(176, 130, 255, 0.55); }
+.lp-tag-policy.on { color: #e0a72f; border-color: rgba(224, 167, 47, 0.55); }
 .lp-tag:hover { background: #0e1820; }
 
 .lp-count {
@@ -238,6 +275,9 @@ onUnmounted(() => {
 }
 .lp-rtag-BE { color: #60c0d0; }
 .lp-rtag-HW { color: #d060a0; }
+.lp-rtag-TELE { color: #69d180; }
+.lp-rtag-CAL  { color: #b082ff; }
+.lp-rtag-POL  { color: #e0a72f; }
 .lp-rtext { flex: 1; }
 
 /* Color coding — match terminal conventions (red = err, amber = warn,

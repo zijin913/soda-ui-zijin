@@ -33,6 +33,7 @@
             <!-- connection facts of the selected policy (edit via ✎) -->
             <div v-if="entry" class="hp-chips">
               <span class="hp-chip">srv {{ entry.host }}:{{ entry.port }}</span>
+              <span class="hp-chip">act {{ entry.action_space || 'auto' }}</span>
               <span class="hp-chip">img {{ entry.image_mode }}</span>
               <span class="hp-chip">grip {{ entry.gripper_close }}</span>
               <span class="hp-chip" :class="entry.builtin ? 'built' : 'user'">{{ entry.builtin ? 'built-in' : 'user' }}</span>
@@ -214,8 +215,10 @@
               <div class="hp-meter"><span>step</span><b>{{ status.step ?? 0 }}</b></div>
             </div>
             <div v-if="status.probe" class="hp-probe">
-              probe ok — arm Δ {{ fmt(status.probe.max_arm_delta_over_chunk) }} rad ·
-              grip Δ {{ fmt(status.probe.max_gripper_delta_over_chunk) }} · {{ status.probe.infer_ms }} ms · no motion
+              probe ok — {{ status.probe.action_space }}<span v-if="status.probe.action_space_reason"> ({{ status.probe.action_space_reason }})</span> ·
+              arm Δ {{ fmt(status.probe.max_arm_delta_over_chunk) }} rad ·
+              grip Δ {{ fmt(status.probe.max_gripper_delta_over_chunk) }}<span v-if="status.probe.ik_fail"> · IK fail {{ status.probe.ik_fail }}</span> ·
+              {{ status.probe.infer_ms }} ms · no motion
             </div>
             <div v-if="status.output_dir" class="hp-probe">⏺ recording → {{ status.output_dir }}</div>
           </section>
@@ -249,6 +252,22 @@
               </select></label>
             <label class="hp-srv-row"><span>gripper close</span>
               <input type="number" step="0.01" v-model.number="np.gripper_close" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.action_space">action space <i class="hp-i">ⓘ</i></span>
+              <select v-model="np.action_space" class="hp-select sm">
+                <option value="auto">auto-detect</option>
+                <option value="joint_pos">joint_pos</option>
+                <option value="joint_vel">joint_vel</option>
+                <option value="cart_pos">cart_pos (IK)</option>
+                <option value="cart_vel">cart_vel (Jacobian)</option>
+              </select></label>
+            <label v-if="np.action_space === 'cart_pos' || np.action_space === 'cart_vel'" class="hp-srv-row">
+              <span class="hp-help" :title="TIPS.orient_rep">orient rep <i class="hp-i">ⓘ</i></span>
+              <select v-model="np.orient_rep" class="hp-select sm">
+                <option value="quat">quat (w,x,y,z)</option>
+                <option value="rot6d">rot6d</option>
+                <option value="euler">euler xyz</option>
+                <option value="axis_angle">axis-angle</option>
+              </select></label>
 
             <div class="hp-form-sec">run defaults <span>initial values; tweak per-run in the left panel</span></div>
             <label class="hp-srv-row"><span class="hp-help" :title="TIPS.infer_mode">inference <i class="hp-i">ⓘ</i></span>
@@ -302,6 +321,17 @@ const views = [
 
 // Detailed hover help for each parameter (native title tooltips).
 const TIPS = {
+  action_space:
+    'What the model outputs (converted to joint targets before control):\n' +
+    '• auto-detect — guess from the first chunk (dim + value ranges + metadata); confirm via the PROBE result before LIVE.\n' +
+    '• joint_pos — joint angles (used directly).\n' +
+    '• joint_vel — joint velocity (integrated from current q).\n' +
+    '• cart_pos — per-arm EE pose → solved with IK.\n' +
+    '• cart_vel — per-arm EE twist [v(3),w(3),grip_vel(1)] → Jacobian (J⁺·twist) → integrate. Twist is base-aligned; must select manually (14-D looks like joint to auto-detect).\n' +
+    'For most checkpoints here this is joint_pos; auto-detect handles it.',
+  orient_rep:
+    'cart_* only — how the EE orientation is encoded in the action vector:\n' +
+    'quat [w,x,y,z] · rot6d (two 3-vectors) · euler xyz · axis-angle. Must match how the model was trained.',
   infer_mode:
     'Inference scheme.\n' +
     '• async (default): a background worker infers continuously while ACT temporal ensembling blends overlapping predictions every control tick — smooth, no stalls, effectively replans every step.\n' +
@@ -385,6 +415,7 @@ const editingId = ref(null);
 const formErr = ref('');
 const np = reactive({
   name: '', host: '', port: 8001, prompts: '', image_mode: 'stretch43', gripper_close: 0.67,
+  action_space: 'auto', orient_rep: 'quat',   // model output space (auto-detect by default)
   // run-param defaults (initial values for a new policy)
   infer_mode: 'async', exec_horizon: 15, chunk_h: 50, control_hz: 50,
   ensemble_decay: 0.1, max_joint_delta: 0.05, binarize_gripper: true, max_steps: 0,
@@ -523,6 +554,8 @@ function _loadForm(e) {
   np.prompts = (e?.prompts || []).join('\n');
   np.image_mode = e?.image_mode || 'stretch43';
   np.gripper_close = e?.gripper_close ?? 0.67;
+  np.action_space = e?.action_space || 'auto';
+  np.orient_rep = e?.orient_rep || 'quat';
   _loadRunParams(np, e);
 }
 function openAdd() {
@@ -549,6 +582,7 @@ async function onSavePolicy() {
     name: np.name, type: 'openpi_ws', host: np.host, port: np.port,
     prompts: np.prompts.split('\n').map((s) => s.trim()).filter(Boolean),
     image_mode: np.image_mode, gripper_close: np.gripper_close,
+    action_space: np.action_space, orient_rep: np.orient_rep,
     info: pieces.info, defaults: pieces.defaults,
   };
   if (editingId.value) body.id = editingId.value;  // edit (built-in -> override under same id)
@@ -570,6 +604,7 @@ async function saveRailAsDefault() {
   const body = {
     id: e.id, name: e.name, type: e.type || 'openpi_ws', host: e.host, port: e.port,
     prompts: e.prompts || [], image_mode: e.image_mode, gripper_close: e.gripper_close,
+    action_space: e.action_space || 'auto', orient_rep: e.orient_rep || 'quat',
     info: { ...(e.info || {}), ...pieces.info }, defaults: pieces.defaults,
   };
   const r = await conn.savePolicy(body);
@@ -616,7 +651,7 @@ watch(() => conn.hostPolicyOpen, (o) => {
 }
 .hp-modal {
   position: relative;
-  width: 90vw; height: 88vh;
+  width: 98vw; height: 96vh;
   display: flex; flex-direction: column;
   background: linear-gradient(180deg, #1a1206, #0a0806);
   border: 1px solid #ffb347; border-radius: 8px;
@@ -642,7 +677,7 @@ watch(() => conn.hostPolicyOpen, (o) => {
 
 .hp-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 0; }
 .hp-rail {
-  flex: 0 0 400px; overflow-y: auto;
+  flex: 0 0 560px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 14px;
   padding: 18px 18px; border-right: 1px solid #3a2c14;
 }

@@ -41,10 +41,8 @@
     <!-- uptime + teleop + zero-grav -->
     <InfoChip v-if="conn.isOperational && conn.uptimeS > 0" label="UP" :value="uptime" />
 
-    <div v-if="conn.teleopRunning" class="cell tele-cell" title="Teleop subprocess is running">
-      <LedDot color="grn" />
-      <span class="k tele">TELE</span>
-    </div>
+    <!-- Teleop status removed from the rail: the TELEOP button in the toolbar
+         already glows while running, so this was a duplicate indicator. -->
 
     <div v-if="conn.zeroGravityActive" class="cell zg-cell"
          title="zero-gravity is active — arms are free to move">

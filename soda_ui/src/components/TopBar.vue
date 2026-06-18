@@ -13,20 +13,16 @@
 
       <!-- Center toolbar -->
       <div class="toolbar-group">
-        <!-- Mode Toggle (RT / RP) — single segmented amber pill, the active
-             half lit up. Disabled until backend is up. -->
+        <!-- REPLAY toggle — realtime is the default; click to switch into
+             replay (review a recording), click again to return to realtime.
+             Lit amber while in replay mode. Disabled until backend is up. -->
         <div class="mode-toggle">
-          <button class="tool-btn mode-btn" :class="{ 'active': mode === 'realtime' }"
-                  :disabled="!isBackendUp"
-                  :title="backendDisabledTitle"
-                  @click="setMode('realtime')">
-            <span class="mode-label">RT</span>
-          </button>
           <button class="tool-btn mode-btn" :class="{ 'active': mode === 'replay' }"
                   :disabled="!isBackendUp"
-                  :title="backendDisabledTitle"
-                  @click="setMode('replay')">
-            <span class="mode-label">RP</span>
+                  :title="!isBackendUp ? backendDisabledTitle :
+                          (mode === 'replay' ? 'Back to realtime' : 'Switch to replay')"
+                  @click="setMode(mode === 'replay' ? 'realtime' : 'replay')">
+            <span class="mode-label">REPLAY</span>
           </button>
         </div>
 
@@ -35,45 +31,39 @@
              and signals "live data flowing" (distinct from HOME cyan and
              STOP red). -->
         <button v-if="mode === 'realtime'" class="tool-btn teleop-btn" :class="{ 'active': isTeleopRunning }"
-                :disabled="!isBackendUp || isCalibActive"
+                :disabled="!isBackendUp || isCalibActive || conn.teachActive"
                 @click="toggleTeleop"
                 :title="!isBackendUp ? backendDisabledTitle :
+                        conn.teachActive ? 'Exit programming mode first' :
                         isCalibActive ? 'Calibration in progress' :
                         isTeleopRunning ? 'Stop teleop' : 'Start teleop (recording is asked in the camera window that pops up on the robot host)'">
-          <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELE</span>
+          <span class="teleop-label" :class="{ 'running': isTeleopRunning }">TELEOP</span>
         </button>
 
-        <!-- CALIBRATE (only in realtime mode) — opens the calibration modal.
-             Runs through the backend's single command client, so it cannot
-             coexist with teleop; disabled while teleop is running. -->
-        <button v-if="mode === 'realtime'" class="tool-btn calib-btn" :class="{ 'active': isCalibActive }"
-                :disabled="!isBackendUp || isTeleopRunning"
-                @click="conn.openCalibration"
-                :title="!isBackendUp ? backendDisabledTitle :
-                        isTeleopRunning ? 'Stop teleop first' :
-                        'Calibrate a camera (left / right / side)'">
-          <span class="calib-label" :class="{ 'running': isCalibActive }">CAL</span>
-        </button>
+        <!-- CALIBRATE lives in the first camera panel's header now (it's a
+             camera task), so it's not in this toolbar. -->
 
         <!-- HOST POLICY (only in realtime) — opens the policy modal. Shares the
              single command client, so it can't coexist with teleop/calibration. -->
         <button v-if="mode === 'realtime'" class="tool-btn policy-btn" :class="{ 'active': isPolicyActive }"
-                :disabled="!isBackendUp || isTeleopRunning || isCalibActive"
+                :disabled="!isBackendUp || isTeleopRunning || isCalibActive || conn.teachActive"
                 @click="conn.openHostPolicy"
                 :title="!isBackendUp ? backendDisabledTitle :
+                        conn.teachActive ? 'Exit programming mode first' :
                         isTeleopRunning ? 'Stop teleop first' :
                         isCalibActive ? 'Stop calibration first' :
                         'Host a policy (pick policy + params, then run)'">
-          <span class="policy-label" :class="{ 'running': isPolicyActive }">POL</span>
+          <span class="policy-label" :class="{ 'running': isPolicyActive }">POLICY</span>
         </button>
 
         <!-- HOME — move both arms to home pose. During teleop routes through
              teleop_quest's 'h' key (clears pending target + pauses) so it
              doesn't race teleop's command stream. Otherwise POSTs /robot/home. -->
         <button class="tool-btn home-btn"
-                :disabled="!isBackendUp || conn.homing"
+                :disabled="!isBackendUp || conn.homing || conn.teachActive"
                 @click="onHome"
                 :title="!isBackendUp ? backendDisabledTitle :
+                        conn.teachActive ? 'Exit programming mode first' :
                         conn.homing ? 'Homing in progress…' : 'Move both arms to home pose'">
           <span class="home-label">{{ conn.homing ? 'HOMING…' : 'HOME' }}</span>
         </button>
@@ -87,10 +77,6 @@
           <span class="stop-label">STOP</span>
         </button>
 
-        <!-- Emergency stop lives in the fixed top-right corner (EmergencyStop
-             component, mounted at App.vue root) — single-click instant SIGKILL,
-             intentionally kept out of this toolbar to avoid mis-clicks. -->
-
         <!-- Recordings Dropdown (only in replay mode) -->
         <div v-if="mode === 'replay'" class="recordings-dropdown-wrapper">
           <select v-model="selectedRecording" @change="loadRecording" class="recordings-select"
@@ -103,43 +89,6 @@
         </div>
 
         <div class="divider"></div>
-
-        <!-- Mouse Tool -->
-        <div class="tool-btn-group">
-          <button class="tool-btn active">
-            <HandToolIcon v-if="currentTool === 'hand'" />
-            <MoveToolIcon v-if="currentTool === 'move'" />
-            <SelectToolIcon v-if="currentTool === 'select'" />
-          </button>
-          <button class="tool-arrow" @click="toggleDropdown">
-            <DropdownArrowIcon />
-          </button>
-
-          <!-- Mouse Tool Dropdown -->
-          <div v-if="isDropdownOpen" class="mouse-tool-dropdown">
-            <button class="dropdown-item" @click="selectTool('hand')">
-              <div class="dropdown-icon-text">
-                <ToolIndicatorIcon class="tool-indicator" :class="{ 'active': currentTool === 'hand' }" />
-                <HandToolIcon />
-                <span>Hand Tool</span>
-              </div>
-            </button>
-            <button class="dropdown-item" @click="selectTool('move')">
-              <div class="dropdown-icon-text">
-                <ToolIndicatorIcon class="tool-indicator" :class="{ 'active': currentTool === 'move' }" />
-                <MoveToolIcon />
-                <span>Move</span>
-              </div>
-            </button>
-            <button class="dropdown-item" @click="selectTool('select')">
-              <div class="dropdown-icon-text">
-                <ToolIndicatorIcon class="tool-indicator" :class="{ 'active': currentTool === 'select' }" />
-                <SelectToolIcon />
-                <span>Select</span>
-              </div>
-            </button>
-          </div>
-        </div>
 
         <button class="tool-btn" :class="{ 'active': isCoordinateActive }" @click="toggleCoordinate">
           <CoordinateIcon />
@@ -170,11 +119,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import LogoIcon from '@/components/icons/LogoIcon.vue';
-import HandToolIcon from '@/components/icons/HandToolIcon.vue';
-import MoveToolIcon from '@/components/icons/MoveToolIcon.vue';
-import SelectToolIcon from '@/components/icons/SelectToolIcon.vue';
-import DropdownArrowIcon from '@/components/icons/DropdownArrowIcon.vue';
-import ToolIndicatorIcon from '@/components/icons/ToolIndicatorIcon.vue';
 import CoordinateIcon from '@/components/icons/Coordinate.vue';
 import DepthToolIcon from '@/components/icons/DepthToolIcon.vue';
 import StatusRail from '@/components/StatusRail.vue';
@@ -202,14 +146,8 @@ const backendDisabledTitle = computed(() =>
     : 'Launcher not reachable — start `python -m soda_launcher` on the robot host',
 );
 
-const props = defineProps({
-  modelValue: { type: String, default: 'hand' }
-});
+const emit = defineEmits(['toggleDepth', 'toggleCoordinate', 'teleopToggled', 'modeChanged', 'replayControl']);
 
-const emit = defineEmits(['update:modelValue', 'toggleDepth', 'teleopToggled', 'modeChanged', 'replayControl']);
-
-const currentTool = ref(props.modelValue);
-const isDropdownOpen = ref(false);
 const isCoordinateActive = ref(false);
 const isDepthActive = ref(false);
 // Teleop running state lives in the connection store now (also visible from
@@ -222,18 +160,9 @@ const recordingFiles = ref([]);
 const selectedRecording = ref('');
 const mode = ref('realtime');
 
-const toggleDropdown = () => {
-  isDropdownOpen.value = !isDropdownOpen.value;
-};
-
-const selectTool = (tool) => {
-  currentTool.value = tool;
-  emit('update:modelValue', tool);
-  isDropdownOpen.value = false;
-};
-
 const toggleCoordinate = () => {
   isCoordinateActive.value = !isCoordinateActive.value;
+  emit('toggleCoordinate', isCoordinateActive.value);
 };
 
 const toggleDepth = () => {
@@ -483,75 +412,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding-right: 4px;
-}
-
-.tool-btn-group {
-  display: flex;
-  /* background: #424548; */
-  border-radius: 10px;
-  padding: 0 8px;
-  align-items: center;
-  height: 58px;
-  position: relative;
-}
-
-
-.mouse-tool-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  background: linear-gradient(180deg, #10161e, #0d1218);
-  border: 1px solid #27323f;
-  border-radius: 6px;
-  padding: 6px 0;
-  width: 160px;
-  z-index: 100;
-  margin-top: 6px;
-  box-shadow: 0 8px 22px rgba(0,0,0,0.55);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-}
-
-.dropdown-item {
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: #c6d3e0;
-  padding: 8px 12px;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-  font-size: 18px;
-  letter-spacing: 0.5px;
-}
-.dropdown-item:hover { background: #19212b; color: #ffb020; }
-
-.dropdown-icon-text {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tool-arrow {
-  background: none;
-  border: none;
-  color: #62717f;
-  padding: 0 6px;
-  cursor: pointer;
-  transition: color 0.15s;
-}
-.tool-arrow:hover { color: #ffb020; }
-
-.tool-indicator {
-  width: 11px;
-  height: 11px;
-  margin-right: 8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-  flex-shrink: 0;
-}
-
-.tool-indicator.active {
-  opacity: 1;
 }
 
 .recordings-dropdown-wrapper {

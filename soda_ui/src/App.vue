@@ -3,12 +3,12 @@
     <div class="dashboard-container">
       
       <!-- 1. Top Navigation -->
-      <TopBar 
-        v-model="currentMouseTool" 
+      <TopBar
         @toggleDepth="showPointCloud = $event"
+        @toggleCoordinate="showCoordinate = $event"
         @teleopToggled="handleTeleopToggle"
         @modeChanged="handleModeChange"
-        @recordingLoaded="fetchTrajectory" 
+        @recordingLoaded="fetchTrajectory"
       />
 
       <!-- 2. Main Viewport -->
@@ -17,6 +17,7 @@
           <RobotViewport
             :pointCloudData="pointCloudData"
             :showPointCloud="showPointCloud"
+            :showCoordinate="showCoordinate"
             :mode="currentMode"
             :dualMode="dualMode"
             @joint-limit-loaded="handleJointLimits"
@@ -24,11 +25,11 @@
 
         <!-- Floating Camera Panel(s) -->
         <template v-if="dualMode">
-          <CameraPanel :imageUrl="cameraRgbUrls.left" label="Left Camera" position="top" />
+          <CameraPanel :imageUrl="cameraRgbUrls.left" label="Left Camera" position="top" :showCalibrate="currentMode === 'realtime'" />
           <CameraPanel :imageUrl="cameraRgbUrls.right" label="Right Camera" position="bottom" />
           <CameraPanel :imageUrl="cameraRgbUrls.side" label="Side Camera" position="lower" />
         </template>
-        <CameraPanel v-else :imageUrl="cameraRgbUrl" />
+        <CameraPanel v-else :imageUrl="cameraRgbUrl" :showCalibrate="currentMode === 'realtime'" />
 
         <!-- Right Sidebar (Data & Controls) -->
         <RightSidebar
@@ -42,6 +43,11 @@
           :currentFrame="replayCurrentFrame"
           :totalFrames="replayTotalFrames"
         />
+
+        <!-- Prominent PROGRAMMING / EXECUTION switch, floated top-center. -->
+        <div class="teach-switch-slot">
+          <TeachModeSwitch />
+        </div>
       </main>
 
       <!-- 3a. Joint clearance strip — disabled per user request.
@@ -92,6 +98,10 @@
            but a rollout is still running. Click to re-open the panel. -->
       <HostPolicyBanner />
 
+      <!-- 5e. Teach/programming banner — shown while both arms are floated for
+           hand-guiding. Reminder + quick EXIT (hold pose). -->
+      <TeachModeBanner />
+
     </div>
 
     <!-- 6. Zero-gravity recovery overlay — fullscreen phosphor modal shown
@@ -108,6 +118,9 @@
       @confirm="conn.confirmStop"
       @cancel="conn.closeStopConfirm"
     />
+
+    <!-- 7b. Teach-mode confirm — real-mode guard before floating both arms. -->
+    <TeachConfirmModal />
 
     <!-- 9. Teleop overlay — fullscreen phosphor modal shown while teleop is
          running. Replaces the OpenCV viewer popup; reuses our existing
@@ -149,6 +162,9 @@ import CalibrationModal from './components/CalibrationModal.vue';
 import CalibrationBanner from './components/CalibrationBanner.vue';
 import HostPolicyModal from './components/HostPolicyModal.vue';
 import HostPolicyBanner from './components/HostPolicyBanner.vue';
+import TeachModeSwitch from './components/TeachModeSwitch.vue';
+import TeachModeBanner from './components/TeachModeBanner.vue';
+import TeachConfirmModal from './components/TeachConfirmModal.vue';
 // import JointClearanceRow from './components/JointClearanceRow.vue';  // disabled per user
 import { useConnectionStore } from '@/stores/connection';
 
@@ -158,11 +174,11 @@ import { useConnectionStore } from '@/stores/connection';
 const conn = useConnectionStore();
 
 // State
-const currentMouseTool = ref('hand');
 const currentMode = ref('realtime');
 const cameraRgbUrl = ref(null);
 const pointCloudData = ref(null);
 const showPointCloud = ref(true);
+const showCoordinate = ref(false);
 const MAX_HISTORY = 500;
 const jointNames = ref({});
 const chartDataHistory = ref({ left: {}, right: {} });
@@ -799,6 +815,15 @@ body {
   position: relative;
   display: flex;
   overflow: hidden;
+}
+
+/* Prominent PROGRAMMING / EXECUTION switch, floated at the top-center. */
+.teach-switch-slot {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
 }
 
 /* Joint clearance strip sits between the viewport and the bottom edge
