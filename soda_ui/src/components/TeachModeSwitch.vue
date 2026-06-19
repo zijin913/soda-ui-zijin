@@ -33,16 +33,16 @@ import { useConnectionStore } from '@/stores/connection';
 
 const conn = useConnectionStore();
 
-// Can't float the arms while something else is commanding them.
-const progBlocked = computed(
-  () => conn.teleopRunning || conn.calibActive || conn.policyActive,
-);
+// Overwrite mode: Programming BARGES IN even while a policy/teleop is running
+// (they're suspended and resumed on Execution). Calibration genuinely conflicts
+// (it also floats the arm), so it's the only thing that blocks entry.
+const progBlocked = computed(() => conn.calibActive);
 const progDisabled = computed(() => !conn.teachActive && progBlocked.value);
 const progTitle = computed(() =>
-  conn.teleopRunning ? 'Stop teleop first'
-    : conn.calibActive ? 'Stop calibration first'
-    : conn.policyActive ? 'Stop the policy first'
-    : 'Programming — float both arms (gravity-comp) to hand-guide them',
+  conn.calibActive ? 'Stop calibration first'
+    : (conn.teleopRunning || conn.policyActive)
+      ? 'Programming — interrupts the running task (it resumes on Execution)'
+      : 'Programming — float both arms (gravity-comp) to hand-guide them',
 );
 
 function toExecution() {

@@ -14,8 +14,8 @@
           </p>
           <ul class="tc-steps">
             <li>Keep a hand on each arm — they may <b>sag</b> slightly</li>
-            <li>Teleop / policy / calibration can't run while compliant</li>
-            <li>Press <kbd>EXECUTION</kbd> to hold pose and resume control</li>
+            <li>Any <b>running task is paused</b> (policy / teleop) — it resumes on EXECUTION</li>
+            <li>Press <kbd>EXECUTION</kbd> to hold pose and resume the task</li>
           </ul>
         </div>
 
@@ -48,7 +48,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 .tc-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  /* Above the policy modal (10200) and the teach switch (10300) so the confirm
+     is reachable when Programming barges in over an open policy/teleop panel. */
+  z-index: 10400;
   background: rgba(0, 0, 0, 0.68);
   backdrop-filter: blur(2px);
   display: flex;

@@ -3,7 +3,7 @@
     <div v-if="conn.teachActive" class="tmb-banner">
       <span class="tmb-led" />
       <span class="tmb-label">PROGRAMMING MODE</span>
-      <span class="tmb-text">arms are compliant — hand-guide them, then return to EXECUTION</span>
+      <span class="tmb-text">arms are compliant — hand-guide them; any paused task resumes on EXECUTION</span>
       <button class="tmb-exit" @click="conn.exitTeach()" title="Stop floating, hold pose, resume control">
         EXIT → HOLD POSE
       </button>
