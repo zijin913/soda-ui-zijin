@@ -44,10 +44,6 @@
           :totalFrames="replayTotalFrames"
         />
 
-        <!-- Prominent PROGRAMMING / EXECUTION switch, floated top-center. -->
-        <div class="teach-switch-slot">
-          <TeachModeSwitch />
-        </div>
       </main>
 
       <!-- 3a. Joint clearance strip — disabled per user request.
@@ -162,7 +158,6 @@ import CalibrationModal from './components/CalibrationModal.vue';
 import CalibrationBanner from './components/CalibrationBanner.vue';
 import HostPolicyModal from './components/HostPolicyModal.vue';
 import HostPolicyBanner from './components/HostPolicyBanner.vue';
-import TeachModeSwitch from './components/TeachModeSwitch.vue';
 import TeachModeBanner from './components/TeachModeBanner.vue';
 import TeachConfirmModal from './components/TeachConfirmModal.vue';
 // import JointClearanceRow from './components/JointClearanceRow.vue';  // disabled per user
@@ -820,13 +815,6 @@ body {
 /* Prominent PROGRAMMING / EXECUTION switch, floated at the top-center.
    z-index sits ABOVE the teleop (9500) and policy (10200) modals so it stays
    reachable to barge into a running task while their panel is open. */
-.teach-switch-slot {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10300;
-}
 
 /* Joint clearance strip sits between the viewport and the bottom edge
  * (or the TimelineControl in replay mode). Stays out of overlay z-index. */

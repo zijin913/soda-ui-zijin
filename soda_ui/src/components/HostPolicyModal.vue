@@ -30,17 +30,8 @@
               </div>
             </label>
 
-            <!-- connection facts of the selected policy (edit via ✎) -->
-            <div v-if="entry" class="hp-chips">
-              <span class="hp-chip">srv {{ entry.host }}:{{ entry.port }}</span>
-              <span class="hp-chip">act {{ entry.action_space || 'auto' }}</span>
-              <span class="hp-chip">img {{ entry.image_mode }}</span>
-              <span class="hp-chip">grip {{ entry.gripper_close }}</span>
-              <span class="hp-chip" :class="entry.builtin ? 'built' : 'user'">{{ entry.builtin ? 'built-in' : 'user' }}</span>
-            </div>
-
             <label class="hp-field">
-              <span class="hp-lbl">PROMPT <em class="hp-sub">(this run — pick a suggestion or type)</em></span>
+              <span class="hp-lbl">PROMPT</span>
               <input v-model="prompt" class="hp-input" :disabled="active" list="hp-prompt-list"
                      placeholder="task instruction…" />
               <datalist id="hp-prompt-list">
@@ -49,23 +40,17 @@
             </label>
 
             <div class="hp-field">
-              <span class="hp-lbl">MODE <em class="hp-sub">(this run)</em></span>
+              <span class="hp-lbl">MODE</span>
               <div class="hp-seg">
                 <button v-for="m in modes" :key="m.id" class="hp-seg-btn" :class="{ sel: mode === m.id }"
                         :disabled="active" :title="m.hint" @click="mode = m.id">{{ m.label }}</button>
               </div>
-              <span class="hp-mode-hint">{{ (modes.find(m => m.id === mode) || {}).hint }}</span>
             </div>
-
-            <label v-if="mode === 'live'" class="hp-confirm">
-              <input type="checkbox" v-model="estopReady" :disabled="active" />
-              <span>Hand on E-STOP — ready to run live</span>
-            </label>
 
             <div class="hp-field">
               <div class="hp-rp-head">
                 <span class="hp-lbl">RUN PARAMETERS
-                  <em class="hp-sub">{{ active ? '· smoothness/speed/latch apply live' : '· starts from policy default' }}</em>
+                 
                 </span>
                 <span class="hp-rp-actions">
                   <span v-if="railMsg" class="hp-rp-msg">{{ railMsg }}</span>
@@ -78,122 +63,55 @@
               </div>
               <div class="hp-rp">
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.infer_mode">inference <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.infer_mode">inference</span>
                   <div class="hp-seg sm">
                     <button class="hp-seg-btn" :class="{ sel: rp.infer_mode === 'async' }" :disabled="active"
                             @click="rp.infer_mode = 'async'">async</button>
                     <button class="hp-seg-btn" :class="{ sel: rp.infer_mode === 'sync' }" :disabled="active"
                             @click="rp.infer_mode = 'sync'">sync</button>
                   </div>
-                  <em class="hp-lock">{{ active ? 'locked' : 'start' }}</em>
                 </label>
                 <label v-if="rp.infer_mode === 'sync'" class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.exec_horizon">execute K <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.exec_horizon">execute K</span>
                   <input type="number" min="1" v-model.number="rp.exec_horizon" class="hp-num" />
-                  <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
                 </label>
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.chunk_h">action chunk H <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.chunk_h">action chunk H</span>
                   <input type="number" min="1" v-model.number="rp.chunk_h" class="hp-num" :disabled="active" />
-                  <em class="hp-lock">{{ active ? 'locked' : 'start' }}</em>
                 </label>
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.control_hz">control Hz <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.control_hz">control Hz</span>
                   <input type="number" min="1" v-model.number="rp.control_hz" class="hp-num" :disabled="active" />
-                  <em class="hp-lock">{{ active ? 'locked' : 'start' }}</em>
                 </label>
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.smoothness">smoothness <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.smoothness">smoothness</span>
                   <input type="range" min="0" max="0.5" step="0.02" v-model.number="rp.ensemble_decay" :disabled="rp.infer_mode === 'sync'" />
-                  <em>{{ rp.infer_mode === 'sync' ? 'async only' : rp.ensemble_decay }}</em>
                 </label>
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.speed">speed limit <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.speed">speed limit</span>
                   <input type="range" min="0.02" max="0.2" step="0.01" v-model.number="rp.max_joint_delta" />
-                  <em>{{ rp.max_joint_delta }}</em>
                 </label>
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.latch">latch gripper <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.latch">latch gripper</span>
                   <input type="checkbox" v-model="rp.binarize_gripper" />
-                  <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
                 </label>
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.max_steps">episode steps <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.max_steps">episode steps</span>
                   <input type="number" min="0" step="100" v-model.number="rp.max_steps" class="hp-num" :disabled="active" />
-                  <em class="hp-lock">{{ rp.max_steps ? (active ? 'locked' : 'start') : '∞' }}</em>
                 </label>
                 <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.record">record run <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.record">record run</span>
                   <input type="checkbox" v-model="rp.record" :disabled="active" />
-                  <em class="hp-lock">start</em>
                 </label>
                 <label v-if="rp.record" class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.run_name">run name <i class="hp-i">ⓘ</i></span>
+                  <span class="hp-help" :title="TIPS.run_name">run name</span>
                   <input v-model="rp.run_name" class="hp-num hp-name" :disabled="active" placeholder="(timestamp)" />
-                  <em class="hp-lock">start</em>
                 </label>
               </div>
             </div>
 
-            <div class="hp-field">
-              <button class="hp-adv-toggle" @click="advOpen = !advOpen">{{ advOpen ? '▾' : '▸' }} Advanced (expert)</button>
-              <div v-if="advOpen" class="hp-rp">
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.send_hz">send Hz <i class="hp-i">ⓘ</i></span>
-                  <input type="number" min="1" v-model.number="adv.send_hz" class="hp-num" :disabled="active" />
-                  <em class="hp-lock">start</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.gripper_cap">gripper Δ cap <i class="hp-i">ⓘ</i></span>
-                  <input type="number" step="0.05" v-model.number="adv.max_gripper_delta" class="hp-num" />
-                  <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.reject">reject outlier <i class="hp-i">ⓘ</i></span>
-                  <input type="number" step="0.1" v-model.number="adv.reject_outlier" class="hp-num" :disabled="active" />
-                  <em class="hp-lock">start</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.no_smooth">no smoothing <i class="hp-i">ⓘ</i></span>
-                  <input type="checkbox" v-model="adv.no_smooth" :disabled="active" />
-                  <em class="hp-lock">start</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.mincut">1€ min-cut <i class="hp-i">ⓘ</i></span>
-                  <input type="number" step="0.1" v-model.number="adv.smooth_mincut" class="hp-num" :disabled="adv.no_smooth" />
-                  <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.beta">1€ beta <i class="hp-i">ⓘ</i></span>
-                  <input type="number" step="0.05" v-model.number="adv.smooth_beta" class="hp-num" :disabled="adv.no_smooth" />
-                  <em :class="{ 'hp-live': active }">{{ active ? 'live' : '' }}</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.sag_comp">sag comp <i class="hp-i">ⓘ</i></span>
-                  <input type="checkbox" v-model="adv.sag_comp" :disabled="active" />
-                  <em class="hp-lock">start</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.sag_ki">sag ki <i class="hp-i">ⓘ</i></span>
-                  <input type="number" step="0.01" v-model.number="adv.sag_ki" class="hp-num" :disabled="active || !adv.sag_comp" />
-                  <em class="hp-lock">start</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.sag_cap">sag cap <i class="hp-i">ⓘ</i></span>
-                  <input type="number" step="0.01" v-model.number="adv.sag_cap" class="hp-num" :disabled="active || !adv.sag_comp" />
-                  <em class="hp-lock">start</em>
-                </label>
-                <label class="hp-rp-row">
-                  <span class="hp-help" :title="TIPS.home">home secs <i class="hp-i">ⓘ</i></span>
-                  <input type="number" step="0.5" v-model.number="adv.home_duration_sec" class="hp-num" :disabled="active" />
-                  <em class="hp-lock">start</em>
-                </label>
-              </div>
-            </div>
 
             <div v-if="message" class="hp-msg" :class="{ err: phase === 'failed' }">{{ message }}</div>
-            <div class="hp-rail-spacer" />
-            <div class="hp-rail-note">Server / image / gripper are policy settings — edit with ✎.</div>
           </section>
 
           <!-- ── Right main: what the model sees + telemetry ── -->
@@ -233,7 +151,8 @@
 
         <!-- Policy editor (single source of truth — add OR edit; saved server-side) -->
         <Transition name="hp-pop">
-          <div v-if="formOpen" class="hp-add-pop">
+          <div v-if="formOpen" class="hp-add-pop-overlay" @click.self="formOpen = false">
+            <div class="hp-add-pop">
             <div class="hp-srv-head">{{ editingId ? 'EDIT POLICY' : 'ADD POLICY' }} <span>saved on the server</span></div>
             <div v-if="editingBuiltin" class="hp-form-note">editing a built-in → saves your own copy that overrides it</div>
             <label class="hp-srv-row"><span>name</span>
@@ -252,7 +171,7 @@
               </select></label>
             <label class="hp-srv-row"><span>gripper close</span>
               <input type="number" step="0.01" v-model.number="np.gripper_close" class="hp-input" /></label>
-            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.action_space">action space <i class="hp-i">ⓘ</i></span>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.action_space">action space</span>
               <select v-model="np.action_space" class="hp-select sm">
                 <option value="auto">auto-detect</option>
                 <option value="joint_pos">joint_pos</option>
@@ -261,7 +180,7 @@
                 <option value="cart_vel">cart_vel (Jacobian)</option>
               </select></label>
             <label v-if="np.action_space === 'cart_pos' || np.action_space === 'cart_vel'" class="hp-srv-row">
-              <span class="hp-help" :title="TIPS.orient_rep">orient rep <i class="hp-i">ⓘ</i></span>
+              <span class="hp-help" :title="TIPS.orient_rep">orient rep</span>
               <select v-model="np.orient_rep" class="hp-select sm">
                 <option value="quat">quat (w,x,y,z)</option>
                 <option value="rot6d">rot6d</option>
@@ -270,30 +189,31 @@
               </select></label>
 
             <div class="hp-form-sec">run defaults <span>initial values; tweak per-run in the left panel</span></div>
-            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.infer_mode">inference <i class="hp-i">ⓘ</i></span>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.infer_mode">inference</span>
               <div class="hp-seg sm">
                 <button class="hp-seg-btn" :class="{ sel: np.infer_mode === 'async' }" @click="np.infer_mode = 'async'">async</button>
                 <button class="hp-seg-btn" :class="{ sel: np.infer_mode === 'sync' }" @click="np.infer_mode = 'sync'">sync</button>
               </div></label>
-            <label v-if="np.infer_mode === 'sync'" class="hp-srv-row"><span class="hp-help" :title="TIPS.exec_horizon">execute K <i class="hp-i">ⓘ</i></span>
+            <label v-if="np.infer_mode === 'sync'" class="hp-srv-row"><span class="hp-help" :title="TIPS.exec_horizon">execute K</span>
               <input type="number" min="1" v-model.number="np.exec_horizon" class="hp-input" /></label>
-            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.chunk_h">action chunk H <i class="hp-i">ⓘ</i></span>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.chunk_h">action chunk H</span>
               <input type="number" min="1" v-model.number="np.chunk_h" class="hp-input" /></label>
-            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.control_hz">control Hz <i class="hp-i">ⓘ</i></span>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.control_hz">control Hz</span>
               <input type="number" min="1" v-model.number="np.control_hz" class="hp-input" /></label>
-            <label v-if="np.infer_mode === 'async'" class="hp-srv-row"><span class="hp-help" :title="TIPS.smoothness">smoothness <i class="hp-i">ⓘ</i></span>
+            <label v-if="np.infer_mode === 'async'" class="hp-srv-row"><span class="hp-help" :title="TIPS.smoothness">smoothness</span>
               <input type="number" step="0.02" v-model.number="np.ensemble_decay" class="hp-input" /></label>
-            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.speed">speed limit <i class="hp-i">ⓘ</i></span>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.speed">speed limit</span>
               <input type="number" step="0.01" v-model.number="np.max_joint_delta" class="hp-input" /></label>
-            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.latch">latch gripper <i class="hp-i">ⓘ</i></span>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.latch">latch gripper</span>
               <input type="checkbox" v-model="np.binarize_gripper" /></label>
-            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.max_steps">episode steps <i class="hp-i">ⓘ</i></span>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.max_steps">episode steps</span>
               <input type="number" min="0" step="100" v-model.number="np.max_steps" class="hp-input" /></label>
 
             <div v-if="formErr" class="hp-msg err">{{ formErr }}</div>
             <div class="hp-srv-foot">
               <button class="hp-btn ghost sm" @click="formOpen = false">CANCEL</button>
               <button class="hp-btn sm" :disabled="!np.name || !np.host || !np.port" @click="onSavePolicy">SAVE</button>
+            </div>
             </div>
           </div>
         </Transition>
@@ -311,7 +231,7 @@ const conn = useConnectionStore();
 const modes = [
   { id: 'probe', label: 'PROBE', hint: 'One inference, no motion — checks the link + what the model sees.' },
   { id: 'dry_run', label: 'DRY-RUN', hint: 'Full closed loop but never commands the arms.' },
-  { id: 'live', label: 'LIVE', hint: 'Commands the arms. Hand on E-STOP.' },
+  { id: 'live', label: 'LIVE', hint: 'Commands the arms.' },
 ];
 const views = [
   { cam: 'cam_left_wrist', label: 'left wrist' },
@@ -406,7 +326,6 @@ const TIPS = {
 const selectedId = ref('');
 const prompt = ref('');
 const mode = ref('probe');
-const estopReady = ref(false);
 const viewNonce = ref(0);
 
 // policy editor form (the single place that defines a policy's params)
@@ -428,12 +347,16 @@ const rp = reactive({
   max_steps: 0, record: false, run_name: '',
 });
 
-// expert knobs (collapsed by default) — most users never touch these
-const advOpen = ref(false);
-const adv = reactive({
-  send_hz: 250, max_gripper_delta: 0.5, reject_outlier: 0.5,
-  no_smooth: false, smooth_mincut: 1.5, smooth_beta: 0.2,
-  sag_comp: false, sag_ki: 0.05, sag_cap: 0.08, home_duration_sec: 4.0,
+// Default run name when "record" is ticked — gives the user something unique
+// to start from. They can still edit it; we never overwrite a name they typed.
+function defaultRunName() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `run-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
+       + `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+watch(() => rp.record, (on) => {
+  if (on && !rp.run_name) rp.run_name = defaultRunName();
 });
 
 const policies = computed(() => conn.policyList || []);
@@ -452,7 +375,7 @@ const phaseLabel = computed(() => ({
   running: 'RUNNING', stopped: 'STOPPED', failed: 'FAILED', done: 'DONE',
 }[phase.value] || String(phase.value).toUpperCase()));
 const startLabel = computed(() => ({ probe: 'PROBE', dry_run: 'DRY-RUN', live: 'RUN LIVE' }[mode.value] || 'START'));
-const canStart = computed(() => conn.backend === 'up' && !!entry.value && (mode.value !== 'live' || estopReady.value));
+const canStart = computed(() => conn.backend === 'up' && !!entry.value);
 
 function fmt(v) {
   if (v == null) return '—';
@@ -498,29 +421,18 @@ watch(entry, (e) => {
   if (!e) return;
   if (!prompt.value || !(e.prompts || []).includes(prompt.value)) prompt.value = (e.prompts || [''])[0];
   if (active.value) return;
-  _loadRunParams(rp, e);
-  const d = e.defaults || {};
-  adv.send_hz = d.send_hz ?? 250;
-  adv.max_gripper_delta = d.max_gripper_delta ?? 0.5;
-  adv.reject_outlier = d.reject_outlier ?? 0.5;
-  adv.no_smooth = d.no_smooth ?? false;
-  adv.smooth_mincut = d.smooth_mincut ?? 1.5;
-  adv.smooth_beta = d.smooth_beta ?? 0.2;
-  adv.sag_comp = d.sag_comp ?? false;
-});
+  _loadRunParams(rp, e);});
 
 // push soft-knob changes to a live rollout (debounced); structural params
 // (chunk_h, control_hz) only apply at the next start.
 let _rpTimer = null;
-watch(() => [rp.ensemble_decay, rp.max_joint_delta, rp.binarize_gripper, rp.exec_horizon,
-             adv.smooth_mincut, adv.smooth_beta, adv.max_gripper_delta], () => {
+watch(() => [rp.ensemble_decay, rp.max_joint_delta, rp.binarize_gripper, rp.exec_horizon], () => {
   if (!active.value) return;
   if (_rpTimer) clearTimeout(_rpTimer);
   _rpTimer = setTimeout(() => {
     conn.updatePolicyParams({
       ensemble_decay: rp.ensemble_decay, max_joint_delta: rp.max_joint_delta, binarize_gripper: rp.binarize_gripper,
       exec_horizon: rp.exec_horizon,
-      smooth_mincut: adv.smooth_mincut, smooth_beta: adv.smooth_beta, max_gripper_delta: adv.max_gripper_delta,
     });
   }, 150);
 });
@@ -532,9 +444,6 @@ async function onStart() {
     chunk_h: rp.chunk_h, control_hz: rp.control_hz, ensemble_decay: rp.ensemble_decay,
     max_joint_delta: rp.max_joint_delta, binarize_gripper: rp.binarize_gripper, max_steps: rp.max_steps,
     record: rp.record, run_name: rp.run_name,
-    send_hz: adv.send_hz, max_gripper_delta: adv.max_gripper_delta, reject_outlier: adv.reject_outlier,
-    no_smooth: adv.no_smooth, smooth_mincut: adv.smooth_mincut, smooth_beta: adv.smooth_beta,
-    sag_comp: adv.sag_comp, sag_ki: adv.sag_ki, sag_cap: adv.sag_cap, home_duration_sec: adv.home_duration_sec,
   };
   const r = await conn.startPolicy({ policy_id: selectedId.value, prompt: prompt.value, mode: mode.value, overrides });
   if (!r.ok) conn.lastError = `Policy start failed: ${r.error}`;
@@ -699,17 +608,64 @@ watch(() => conn.hostPolicyOpen, (o) => {
 .hp-mini { background: #06080b; color: #c69a4a; border: 1px solid #5a4214; border-radius: 4px; padding: 7px 10px; font-size: 22.5px; line-height: 1; cursor: pointer; }
 .hp-mini:hover:not(:disabled) { border-color: #ffb347; color: #ffe6c2; }
 .hp-mini:disabled { opacity: 0.5; cursor: default; }
-.hp-add-pop {
-  position: absolute; left: 14px; top: 70px; z-index: 6;
-  width: 340px; max-height: 82vh; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 8px;
-  background: linear-gradient(180deg, #221708, #0c0906);
-  border: 1px solid #ffb347; border-radius: 6px; padding: 12px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 0 18px rgba(255,179,71,0.25);
+/* === Editor popup (+ / ✎) === A centered card overlay with breathing room. */
+/* Click-anywhere-outside overlay — slight dim, captures clicks to close. */
+.hp-add-pop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: rgba(0, 0, 0, 0.22);
+  cursor: pointer;
 }
-.hp-form-note { font-size: 18px; color: #ffd28a; }
-.hp-form-sec { font-size: 17.2px; letter-spacing: 1px; color: #8a6a30; margin-top: 4px; border-top: 1px solid #3a2c14; padding-top: 6px; }
-.hp-form-sec span { letter-spacing: 0; color: #6b5424; margin-left: 6px; }
+.hp-add-pop-overlay > .hp-add-pop { cursor: default; }
+
+.hp-add-pop {
+  position: absolute;
+  left: 18px; top: 60px;
+  z-index: 7;
+  width: min(440px, calc(100% - 36px));
+  max-height: calc(96vh - 140px);
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+  background: linear-gradient(180deg, #1c1409 0%, #0a0806 100%);
+  border: 1px solid #6a4a18;
+  border-radius: 10px;
+  padding: 22px 24px 18px;
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 179, 71, 0.06),
+    0 0 22px rgba(255, 179, 71, 0.18);
+}
+
+/* Soft scrollbar inside the popup */
+.hp-add-pop::-webkit-scrollbar { width: 10px; }
+.hp-add-pop::-webkit-scrollbar-track { background: transparent; }
+.hp-add-pop::-webkit-scrollbar-thumb {
+  background: #3a2c14; border-radius: 6px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+
+.hp-form-note {
+  font-size: 15px; color: #ffd28a;
+  background: rgba(255, 179, 71, 0.08);
+  border-left: 2px solid #ffb347;
+  padding: 8px 12px; border-radius: 4px;
+  margin: -4px 0 4px;
+}
+
+/* Section separator — small caps title + subtle rule */
+.hp-form-sec {
+  font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+  color: #d09a40;
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 6px; padding-top: 12px;
+  border-top: 1px solid #3a2c14;
+}
+.hp-form-sec::after {
+  content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, #3a2c14, transparent);
+}
+.hp-form-sec span { letter-spacing: 0.5px; color: #8a6a30; text-transform: none; font-size: 13px; }
 .hp-rp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .hp-rp-actions { display: flex; align-items: center; gap: 6px; }
 .hp-rp-msg { font-size: 17.2px; color: #8ff0a0; }
@@ -749,7 +705,6 @@ watch(() => conn.hostPolicyOpen, (o) => {
 .hp-seg.sm { display: inline-flex; }
 .hp-seg.sm .hp-seg-btn { padding: 4px 14px; font-size: 19.5px; }
 
-.hp-confirm { display: flex; align-items: center; gap: 8px; font-size: 21px; color: #ffd28a; }
 .hp-msg { font-size: 21px; color: #d9b878; border-left: 2px solid #5a4214; padding: 6px 10px; background: #06080b; }
 .hp-msg.err { color: #ff8a7a; border-color: #6b2e2e; }
 
@@ -773,10 +728,71 @@ watch(() => conn.hostPolicyOpen, (o) => {
 .hp-btn.ghost { color: #c69a4a; }
 .hp-btn:hover:not(:disabled) { filter: brightness(1.1); }
 
-.hp-srv-head { font-size: 19.5px; letter-spacing: 1px; color: #ffd28a; display: flex; justify-content: space-between; align-items: baseline; }
-.hp-srv-head span { font-size: 17.2px; color: #8a6a30; letter-spacing: 0; }
-.hp-srv-row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 8px; font-size: 21px; color: #d9b878; }
-.hp-srv-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 2px; }
+/* Editor popup header: bigger title, calmer subtitle */
+.hp-srv-head {
+  font-size: 22px; font-weight: 700; letter-spacing: 1.8px;
+  color: #ffe6c2;
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding-bottom: 12px; border-bottom: 1px solid #3a2c14;
+  margin: -4px -4px 4px;
+  padding: 4px 4px 14px;
+}
+.hp-srv-head span { font-size: 12px; color: #8a6a30; letter-spacing: 0.5px; text-transform: uppercase; }
+
+/* Editor rows: roomier label column, larger gap, focus on input field */
+.hp-srv-row {
+  display: grid; grid-template-columns: 130px 1fr;
+  align-items: center; gap: 14px;
+  font-size: 16px; color: #d9b878;
+}
+.hp-srv-row > span:first-child {
+  font-size: 14px; letter-spacing: 0.4px;
+  color: #c69a4a;
+}
+.hp-srv-row .hp-input,
+.hp-srv-row .hp-select.sm {
+  background: #050608;
+  border: 1px solid #3a2c14;
+  color: #ffe6c2;
+  border-radius: 5px;
+  padding: 8px 10px;
+  font-size: 15px;
+  font-family: inherit;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+  width: 100%; box-sizing: border-box;
+}
+.hp-srv-row .hp-input:hover,
+.hp-srv-row .hp-select.sm:hover { border-color: #5a4214; }
+.hp-srv-row .hp-input:focus,
+.hp-srv-row .hp-select.sm:focus {
+  outline: none;
+  border-color: #ffb347;
+  box-shadow: 0 0 0 2px rgba(255, 179, 71, 0.18);
+}
+.hp-srv-row input[type="checkbox"] {
+  width: 18px; height: 18px; accent-color: #ffb347;
+  justify-self: start;
+}
+.hp-srv-row .hp-ta { min-height: 64px; resize: vertical; font-family: inherit; line-height: 1.45; }
+
+/* Footer: right-aligned, primary SAVE button stands out */
+.hp-srv-foot {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 8px; padding-top: 14px;
+  border-top: 1px solid #3a2c14;
+}
+.hp-srv-foot .hp-btn.sm {
+  padding: 8px 18px; font-size: 14px; letter-spacing: 1.4px; font-weight: 700;
+  border-radius: 5px;
+}
+.hp-srv-foot .hp-btn.sm:not(.ghost) {
+  background: linear-gradient(180deg, #ffb347, #d98e22);
+  color: #1a1206; border-color: #ffb347;
+}
+.hp-srv-foot .hp-btn.sm:not(.ghost):disabled {
+  background: #3a2c14; color: #6b5424; border-color: #3a2c14; cursor: default;
+}
+.hp-srv-foot .hp-btn.ghost { padding: 8px 16px; }
 
 @keyframes hp-blink { 50% { opacity: 0.4; } }
 .hp-fade-enter-active, .hp-fade-leave-active { transition: opacity .18s; }

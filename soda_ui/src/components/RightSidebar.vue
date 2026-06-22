@@ -1,5 +1,9 @@
 <template>
   <aside class="right-sidebar">
+    <!-- Mode switch — Execution / Programming. Top of sidebar so it owns the
+         most-visible slot above the gripper controls. -->
+    <TeachModeSwitch />
+
     <!-- Gripper module -->
     <div class="panel-block gripper-block">
       <div class="panel-header">
@@ -97,6 +101,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import TeachModeSwitch from './TeachModeSwitch.vue';
 import GripperIcon from '@/components/icons/GripperIcon.vue';
 
 const props = defineProps({
@@ -521,4 +526,6 @@ const generatePath = (jointIndex, side = 'left') => {
   border-bottom: 1px solid #19212b;
   background: rgba(0, 0, 0, 0.35);
 }
+
+
 </style>
