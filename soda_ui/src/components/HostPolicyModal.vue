@@ -293,18 +293,17 @@ const TIPS = {
     'Schmitt-trigger the gripper: latch fully open / fully closed instead of following the raw continuous value, which stops open/close chatter near the threshold.\n' +
     'Editable live.',
   gripper_map:
-    'How the checkpoint\'s gripper output is converted to a real arm command.\n' +
-    '• source = the units the policy was trained in (OpenPi GP100: 0..1.52 rad, UMI: 0.085..0.0 m, SODA-self: matches real)\n' +
-    '• target = the real arm gripper joint command (commonly 0..0.67 rad for GR100, from site.yaml gripper_max_position)\n' +
-    'The map is clip + affine, so reversed source ranges (UMI: open > close) work without special config.',
+    'Affine map from the policy\'s gripper convention to the real arm command.\n' +
+    'source = the values the policy emits; target = what the arm receives.\n' +
+    'Reversed source ranges (source_open > source_close) are supported.',
   gripper_source_open:
-    'Policy value that means "fully open". OpenPi GP100: 0.0 rad. UMI: 0.085 m (85 mm jaw width). SODA-self: depends on training data, often 0.0.',
+    'Policy value that means "fully open".',
   gripper_source_close:
-    'Policy value that means "fully closed". OpenPi GP100: 1.52 rad. UMI: 0.0 m (jaws touching). SODA-self: usually equals the target_close (identity map).',
+    'Policy value that means "fully closed".',
   gripper_target_open:
-    'Real arm command for "fully open". Normally 0.0 for GR100.',
+    'Real arm command for "fully open".',
   gripper_target_close:
-    'Real arm command for "fully closed". = site.yaml gripper_max_position. Commonly 0.67 for the safe-tested GR100 upper bound; lower for more conservative grip force.',
+    'Real arm command for "fully closed".',
   max_steps:
     'Auto-stop the rollout after this many control steps (0 = run until you press STOP).\n' +
     'Use for fixed-length, repeatable episodes. Applied at start.',
