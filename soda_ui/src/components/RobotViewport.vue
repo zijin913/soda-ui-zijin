@@ -54,6 +54,14 @@ let scene, camera, renderer, controls, loader;
 let raycaster, pointer;
 let robotModel = null;
 let robotModels = {};  // { left: model, right: model } for dual mode
+// Bumped every time disposeAllRobotModels() runs. loadSingleURDF captures the
+// value at the START of an async load, then compares in the URDFLoader.load
+// callback — if the counter has moved, the load is "stale" (a Stop happened
+// while the load was in flight) and the robot is silently disposed instead
+// of being added to the scene. This is the actual fix for the "上一状态留着"
+// ghosting: even my dispose-on-DOWN code can't help if an in-flight load
+// from the previous session still fires its scene.add() after the dispose.
+let urdfGeneration = 0;
 let draggingSide = null;  // Track which arm is being dragged in dual mode
 let pointCloudPoints = null;
 let pointCloudGeometry = null;
@@ -149,7 +157,26 @@ const initScene = () => {
   // Material is applied in loadSingleURDF
 
   const loadSingleURDF = (urdfUrl, side = null, position = null) => {
+    // Generation token: each loadSingleURDF call captures the current
+    // urdfGeneration at start. The URDFLoader.load callback compares it to
+    // the live counter — if disposeAllRobotModels() ran in the interim
+    // (bumping the counter), the robot we just decoded is "stale" and must
+    // be thrown away INSTEAD OF added to the scene. Without this, two
+    // sequential backend=up events would each kick off loads, both async
+    // callbacks would scene.add(), and the user sees two arms.
+    const myGeneration = urdfGeneration;
     loader.load(urdfUrl, robot => {
+      if (myGeneration !== urdfGeneration) {
+        // Stale load — dispose without adding to scene.
+        robot.traverse((c) => {
+          if (c.geometry) c.geometry.dispose();
+          if (c.material) {
+            if (Array.isArray(c.material)) c.material.forEach((m) => m.dispose());
+            else c.material.dispose();
+          }
+        });
+        return;
+      }
       if (side) {
         robotModels[side] = robot;
         // Also set robotModel to first loaded for backward compat
@@ -236,22 +263,21 @@ const initScene = () => {
   loadURDF();
   fetchGripperJoints();
 
-  // Retry URDF + gripper-joints load when the backend transitions to "up".
-  // Without this, opening the UI BEFORE the stack is launched leaves the
-  // initial /urdf fetch failing silently; the arm model only appears after
-  // a manual page refresh. With the watcher, clicking LAUNCH and waiting
-  // for the backend to come up triggers an automatic re-load.
   // Backend lifecycle handler:
-  //   - on UP:    dispose any leftover URDF from a previous session, then
-  //               load a fresh one. A `loadingUrdf` flag prevents concurrent
-  //               async loads from racing and stacking two robots in the
-  //               scene (the classic Stop→Launch ghost bug).
-  //   - on DOWN:  proactively dispose so the next UP starts from a clean
-  //               scene instead of letting the stale model linger. Without
-  //               this, multiple Stop→Launch cycles silently accumulate
-  //               URDF meshes until VRAM fills.
-  let loadingUrdf = false;
+  //   - on UP transitioning from non-up:
+  //       dispose any leftover URDF from a previous session, then load a fresh
+  //       one. The generation-counter cancellation inside loadSingleURDF makes
+  //       sure any still-in-flight URDFLoader callback from the prior session
+  //       (or from the initial loadURDF() above) gets thrown away instead of
+  //       silently scene.add'ing a second robot.
+  //   - on transition to non-up:
+  //       dispose so the next UP starts from a clean scene instead of letting
+  //       the stale model linger. Without this, multiple Stop→Launch cycles
+  //       silently accumulate URDF meshes until the visible ghost the user
+  //       reported as "上一状态的重影". Bumping urdfGeneration here is what
+  //       cancels any URDF download still in-flight from the previous session.
   const disposeAllRobotModels = () => {
+    urdfGeneration++;   // invalidate any in-flight URDFLoader.load callbacks
     const disposeOne = (r) => {
       if (!r) return;
       scene.remove(r);
@@ -273,17 +299,24 @@ const initScene = () => {
     // joint objects on the now-removed model, which would otherwise leak.
     for (const k of Object.keys(jointSmoothing)) delete jointSmoothing[k];
   };
+  let prevBackendState = conn.backend;
   watch(() => conn.backend, (be) => {
+    const wasUp = prevBackendState === 'up';
+    prevBackendState = be;
     if (be !== 'up') {
-      disposeAllRobotModels();
+      if (wasUp) disposeAllRobotModels();
       return;
     }
-    if (loadingUrdf) return;
-    if (robotModel || Object.keys(robotModels).length > 0) return;
-    loadingUrdf = true;
-    Promise.resolve(loadURDF())
-      .catch((err) => console.error('[RobotViewport] loadURDF failed:', err))
-      .finally(() => { loadingUrdf = false; });
+    // be === 'up'. If we were already up and a model is present, no-op.
+    // If we just transitioned from non-up, dispose and reload to flush stale
+    // state. If we were never up (e.g. fresh mount, backend was already up
+    // before the watch fired), the initial loadURDF() above is in flight —
+    // honour it by not duplicating.
+    if (wasUp) return;
+    if (robotModel || Object.keys(robotModels).length > 0) {
+      disposeAllRobotModels();
+    }
+    loadURDF();
     fetchGripperJoints();
   });
 
