@@ -169,8 +169,22 @@
                 <option value="pad43">pad43</option>
                 <option value="stretch">stretch</option>
               </select></label>
-            <label class="hp-srv-row"><span>gripper close</span>
-              <input type="number" step="0.01" v-model.number="np.gripper_close" class="hp-input" /></label>
+            <!-- Gripper mapping: 4 numbers per policy that define how the
+                 checkpoint's gripper value gets mapped to the real arm.
+                 - source range = the policy/training convention
+                 - target range = the real arm command
+                 See policies.yaml comments for UMI / GP100 / SODA-self examples.
+                 The legacy "gripper_close" field maps to target_close so older
+                 saved policies keep working. -->
+            <div class="hp-form-sec hp-form-sec-sub">gripper mapping <span class="hp-help" :title="TIPS.gripper_map">policy units → real arm units</span></div>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.gripper_source_open">source open</span>
+              <input type="number" step="0.001" v-model.number="np.gripper_source_open" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.gripper_source_close">source close</span>
+              <input type="number" step="0.001" v-model.number="np.gripper_source_close" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.gripper_target_open">target open</span>
+              <input type="number" step="0.01" v-model.number="np.gripper_target_open" class="hp-input" /></label>
+            <label class="hp-srv-row"><span class="hp-help" :title="TIPS.gripper_target_close">target close</span>
+              <input type="number" step="0.01" v-model.number="np.gripper_target_close" class="hp-input" /></label>
             <label class="hp-srv-row"><span class="hp-help" :title="TIPS.action_space">action space</span>
               <select v-model="np.action_space" class="hp-select sm">
                 <option value="auto">auto-detect</option>
@@ -278,6 +292,19 @@ const TIPS = {
   latch:
     'Schmitt-trigger the gripper: latch fully open / fully closed instead of following the raw continuous value, which stops open/close chatter near the threshold.\n' +
     'Editable live.',
+  gripper_map:
+    'How the checkpoint\'s gripper output is converted to a real arm command.\n' +
+    '• source = the units the policy was trained in (OpenPi GP100: 0..1.52 rad, UMI: 0.085..0.0 m, SODA-self: matches real)\n' +
+    '• target = the real arm gripper joint command (commonly 0..0.67 rad for GR100, from site.yaml gripper_max_position)\n' +
+    'The map is clip + affine, so reversed source ranges (UMI: open > close) work without special config.',
+  gripper_source_open:
+    'Policy value that means "fully open". OpenPi GP100: 0.0 rad. UMI: 0.085 m (85 mm jaw width). SODA-self: depends on training data, often 0.0.',
+  gripper_source_close:
+    'Policy value that means "fully closed". OpenPi GP100: 1.52 rad. UMI: 0.0 m (jaws touching). SODA-self: usually equals the target_close (identity map).',
+  gripper_target_open:
+    'Real arm command for "fully open". Normally 0.0 for GR100.',
+  gripper_target_close:
+    'Real arm command for "fully closed". = site.yaml gripper_max_position. Commonly 0.67 for the safe-tested GR100 upper bound; lower for more conservative grip force.',
   max_steps:
     'Auto-stop the rollout after this many control steps (0 = run until you press STOP).\n' +
     'Use for fixed-length, repeatable episodes. Applied at start.',
@@ -333,7 +360,14 @@ const formOpen = ref(false);
 const editingId = ref(null);
 const formErr = ref('');
 const np = reactive({
-  name: '', host: '', port: 8001, prompts: '', image_mode: 'stretch43', gripper_close: 0.67,
+  name: '', host: '', port: 8001, prompts: '', image_mode: 'stretch43',
+  // Gripper mapping (4-parameter affine, defaults match OpenPi GP100 → GR100).
+  // gripper_close legacy alias still tracked so older saves continue to work.
+  gripper_source_open: 0.0,
+  gripper_source_close: 1.52,
+  gripper_target_open: 0.0,
+  gripper_target_close: 0.67,
+  gripper_close: 0.67,
   action_space: 'auto', orient_rep: 'quat',   // model output space (auto-detect by default)
   // run-param defaults (initial values for a new policy)
   infer_mode: 'async', exec_horizon: 15, chunk_h: 50, control_hz: 50,
@@ -462,7 +496,13 @@ function _loadForm(e) {
   np.port = e?.port ?? 8001;
   np.prompts = (e?.prompts || []).join('\n');
   np.image_mode = e?.image_mode || 'stretch43';
-  np.gripper_close = e?.gripper_close ?? 0.67;
+  // Load 4 gripper mapping params with sensible fallbacks. Legacy entries that
+  // only saved `gripper_close` still work — target_close inherits it.
+  np.gripper_source_open  = e?.gripper_source_open  ?? 0.0;
+  np.gripper_source_close = e?.gripper_source_close ?? 1.52;
+  np.gripper_target_open  = e?.gripper_target_open  ?? 0.0;
+  np.gripper_target_close = e?.gripper_target_close ?? e?.gripper_close ?? 0.67;
+  np.gripper_close = np.gripper_target_close;   // keep legacy alias in sync
   np.action_space = e?.action_space || 'auto';
   np.orient_rep = e?.orient_rep || 'quat';
   _loadRunParams(np, e);
@@ -490,7 +530,13 @@ async function onSavePolicy() {
   const body = {
     name: np.name, type: 'openpi_ws', host: np.host, port: np.port,
     prompts: np.prompts.split('\n').map((s) => s.trim()).filter(Boolean),
-    image_mode: np.image_mode, gripper_close: np.gripper_close,
+    image_mode: np.image_mode,
+    // All 4 gripper mapping params + legacy alias for older readers.
+    gripper_source_open: np.gripper_source_open,
+    gripper_source_close: np.gripper_source_close,
+    gripper_target_open: np.gripper_target_open,
+    gripper_target_close: np.gripper_target_close,
+    gripper_close: np.gripper_target_close,  // legacy alias kept in sync
     action_space: np.action_space, orient_rep: np.orient_rep,
     info: pieces.info, defaults: pieces.defaults,
   };
@@ -512,7 +558,12 @@ async function saveRailAsDefault() {
   const pieces = _persistPieces(rp, e.defaults || {});
   const body = {
     id: e.id, name: e.name, type: e.type || 'openpi_ws', host: e.host, port: e.port,
-    prompts: e.prompts || [], image_mode: e.image_mode, gripper_close: e.gripper_close,
+    prompts: e.prompts || [], image_mode: e.image_mode,
+    gripper_source_open:  e.gripper_source_open  ?? 0.0,
+    gripper_source_close: e.gripper_source_close ?? 1.52,
+    gripper_target_open:  e.gripper_target_open  ?? 0.0,
+    gripper_target_close: e.gripper_target_close ?? e.gripper_close ?? 0.67,
+    gripper_close: e.gripper_target_close ?? e.gripper_close ?? 0.67,
     action_space: e.action_space || 'auto', orient_rep: e.orient_rep || 'quat',
     info: { ...(e.info || {}), ...pieces.info }, defaults: pieces.defaults,
   };
