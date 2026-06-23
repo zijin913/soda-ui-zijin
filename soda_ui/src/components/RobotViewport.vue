@@ -241,11 +241,49 @@ const initScene = () => {
   // initial /urdf fetch failing silently; the arm model only appears after
   // a manual page refresh. With the watcher, clicking LAUNCH and waiting
   // for the backend to come up triggers an automatic re-load.
+  // Backend lifecycle handler:
+  //   - on UP:    dispose any leftover URDF from a previous session, then
+  //               load a fresh one. A `loadingUrdf` flag prevents concurrent
+  //               async loads from racing and stacking two robots in the
+  //               scene (the classic Stop→Launch ghost bug).
+  //   - on DOWN:  proactively dispose so the next UP starts from a clean
+  //               scene instead of letting the stale model linger. Without
+  //               this, multiple Stop→Launch cycles silently accumulate
+  //               URDF meshes until VRAM fills.
+  let loadingUrdf = false;
+  const disposeAllRobotModels = () => {
+    const disposeOne = (r) => {
+      if (!r) return;
+      scene.remove(r);
+      r.traverse((c) => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) {
+          if (Array.isArray(c.material)) c.material.forEach((m) => m.dispose());
+          else c.material.dispose();
+        }
+      });
+    };
+    disposeOne(robotModel);
+    robotModel = null;
+    for (const side of Object.keys(robotModels)) {
+      disposeOne(robotModels[side]);
+      delete robotModels[side];
+    }
+    // Clear the per-joint smoothing entries — they hold direct references to
+    // joint objects on the now-removed model, which would otherwise leak.
+    for (const k of Object.keys(jointSmoothing)) delete jointSmoothing[k];
+  };
   watch(() => conn.backend, (be) => {
-    if (be !== 'up') return;
-    const alreadyLoaded = robotModel || Object.keys(robotModels).length > 0;
-    if (alreadyLoaded) return;
-    loadURDF();
+    if (be !== 'up') {
+      disposeAllRobotModels();
+      return;
+    }
+    if (loadingUrdf) return;
+    if (robotModel || Object.keys(robotModels).length > 0) return;
+    loadingUrdf = true;
+    Promise.resolve(loadURDF())
+      .catch((err) => console.error('[RobotViewport] loadURDF failed:', err))
+      .finally(() => { loadingUrdf = false; });
     fetchGripperJoints();
   });
 
@@ -332,10 +370,20 @@ const handleJointStateUpdate = (event) => {
 
     // While the user is actively dragging this joint, local prediction owns
     // its target — ignore the round-trip-delayed telemetry value so the two
-    // don't fight and jitter. Telemetry resumes for it on pointer-up.
+    // don't fight and jitter. Also keep ignoring telemetry for a short grace
+    // period after pointer-up: the arm hasn't yet reached the commanded
+    // angle and the first telemetry packet would visibly snap us back to
+    // the pre-drag pose.
     if (isDragging && draggingJoint) {
       const dragKey = draggingSide ? `${draggingSide}_${draggingJoint.urdfName}` : draggingJoint.urdfName;
       if (stateKey === dragKey) return;
+    }
+    if (recentlyReleasedDragKeys.size > 0) {
+      const expiresAt = recentlyReleasedDragKeys.get(stateKey);
+      if (expiresAt !== undefined) {
+        if (performance.now() < expiresAt) return;
+        recentlyReleasedDragKeys.delete(stateKey);
+      }
     }
 
     currentJointAngles.value[stateKey] = angle;
@@ -584,6 +632,15 @@ const onWheel = (event) => {
   currentJointAngles.value[stateKey] = clampedAngle;
 };
 
+// After the user releases the slider, telemetry from the arm typically lags
+// the commanded motion by 300-600 ms (controller send → arm move → encoder
+// report → state WS). Without a post-release guard the first telemetry packet
+// after pointer-up forces the displayed joint back to the OLD (pre-drag)
+// angle, then the next packet drags it forward again — the visible "snap
+// back" flicker. Keep the per-joint drag key alive for a grace period and
+// have handleJointStateUpdate honour it like the in-progress drag guard.
+const POST_RELEASE_GUARD_MS = 800;
+const recentlyReleasedDragKeys = new Map();   // dragKey → expiresAtMs
 const onPointerUp = () => {
   if (isDragging) {
     if (jointControlTimer) {
@@ -593,6 +650,12 @@ const onPointerUp = () => {
     if (accumulatedDeltaAngle !== 0) {
       sendJointCommand(draggingJoint.urdfName, accumulatedDeltaAngle, draggingSide);
       accumulatedDeltaAngle = 0;
+    }
+    if (draggingJoint) {
+      const releasedKey = draggingSide
+        ? `${draggingSide}_${draggingJoint.urdfName}`
+        : draggingJoint.urdfName;
+      recentlyReleasedDragKeys.set(releasedKey, performance.now() + POST_RELEASE_GUARD_MS);
     }
     isDragging = false;
     draggingJoint = null;
