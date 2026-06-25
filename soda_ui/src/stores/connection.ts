@@ -163,7 +163,7 @@ export const useConnectionStore = defineStore('connection', () => {
       const data = await r.json().catch(() => ({}))
       if (!r.ok) {
         lastError.value = data?.error || `Enter teach failed (HTTP ${r.status})`
-        return { ok: false, error: lastError.value }
+        return { ok: false, error: lastError.value ?? undefined }
       }
       teachActive.value = true
       return { ok: true }
@@ -178,7 +178,7 @@ export const useConnectionStore = defineStore('connection', () => {
       const data = await r.json().catch(() => ({}))
       if (!r.ok) {
         lastError.value = data?.error || `Exit teach failed (HTTP ${r.status})`
-        return { ok: false, error: lastError.value }
+        return { ok: false, error: lastError.value ?? undefined }
       }
       teachActive.value = false
       return { ok: true }

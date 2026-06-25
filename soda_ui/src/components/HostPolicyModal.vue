@@ -116,7 +116,7 @@
 
           <!-- ── Right main: what the model sees + telemetry ── -->
           <section class="hp-main">
-            <div class="hp-main-bar">WHAT THE MODEL SEES <span class="hp-main-sub">(exact 224 input · {{ entry?.image_mode }})</span></div>
+            <div class="hp-main-bar">WHAT THE MODEL SEES <span class="hp-main-sub">(exact 224 input · {{ np.image_mode }})</span></div>
             <div class="hp-views-one">
               <img v-if="showViews" :src="viewSrc('all')" class="hp-img-wide" alt="model view" />
               <div v-else class="hp-img-wide hp-img-empty">{{ phase === 'idle' ? 'press ' + startLabel : 'waiting for frames…' }}</div>
@@ -165,8 +165,9 @@
               <textarea v-model="np.prompts" class="hp-input hp-ta" placeholder="one task per line" /></label>
             <label class="hp-srv-row"><span>image</span>
               <select v-model="np.image_mode" class="hp-select sm">
-                <option value="stretch43">stretch43</option>
+                <option value="pad169">pad169</option>
                 <option value="pad43">pad43</option>
+                <option value="stretch43">stretch43</option>
                 <option value="stretch">stretch</option>
               </select></label>
             <!-- Gripper mapping: 4 numbers per policy that define how the
@@ -359,7 +360,7 @@ const formOpen = ref(false);
 const editingId = ref(null);
 const formErr = ref('');
 const np = reactive({
-  name: '', host: '', port: 8001, prompts: '', image_mode: 'stretch43',
+  name: '', host: '', port: 8001, prompts: '', image_mode: 'pad169',
   // Gripper mapping (4-parameter affine, defaults match OpenPi GP100 → GR100).
   // gripper_close legacy alias still tracked so older saves continue to work.
   gripper_source_open: 0.0,
@@ -414,7 +415,11 @@ function fmt(v) {
   if (v == null) return '—';
   return typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v;
 }
-function viewSrc(cam) { return `${conn.backendUrl}/policy/view?cam=${cam}&n=${viewNonce.value}`; }
+// Pass the dropdown's image_mode so the idle preview shows the real framing the
+// model would receive; reading np.image_mode here also makes the <img> src
+// reactive, so changing the mode reconnects the stream. (A running rollout's
+// real mode still wins server-side.)
+function viewSrc(cam) { return `${conn.backendUrl}/policy/view?cam=${cam}&mode=${np.image_mode || 'pad169'}&n=${viewNonce.value}`; }
 
 // The non-advanced run parameters, abstracted in one place. They live in the
 // policy as saved DEFAULTS (info.chunk_h/control_hz + defaults.*); the rail is a
@@ -494,7 +499,7 @@ function _loadForm(e) {
   np.host = e?.host || '';
   np.port = e?.port ?? 8001;
   np.prompts = (e?.prompts || []).join('\n');
-  np.image_mode = e?.image_mode || 'stretch43';
+  np.image_mode = e?.image_mode || 'pad169';
   // Load 4 gripper mapping params with sensible fallbacks. Legacy entries that
   // only saved `gripper_close` still work — target_close inherits it.
   np.gripper_source_open  = e?.gripper_source_open  ?? 0.0;
